@@ -9,7 +9,6 @@ from claude_agent_sdk import ResultMessage
 from hive.models import AgentConfig, BudgetConfig
 from hive.prompt_builder import build_system_prompt
 
-
 # ---------------------------------------------------------------------------
 # build_system_prompt tests
 # ---------------------------------------------------------------------------
@@ -90,9 +89,7 @@ def _make_result_message(
 
 @pytest.mark.asyncio
 async def test_invoke_claude_basic():
-    fake_result = _make_result_message(
-        result="Hello from Claude", cost=0.12, session_id="sess-123"
-    )
+    fake_result = _make_result_message(result="Hello from Claude", cost=0.12, session_id="sess-123")
 
     async def fake_query(**kwargs):
         yield fake_result
@@ -123,7 +120,7 @@ async def test_invoke_claude_with_session():
     with patch("hive.claude.query", new=fake_query):
         from hive.claude import invoke_claude
 
-        text, cost, session_id = await invoke_claude(
+        text, _cost, session_id = await invoke_claude(
             prompt="Continue",
             system_prompt="You are a tester",
             session_id="sess-456",

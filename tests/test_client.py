@@ -5,7 +5,7 @@ import pytest
 import respx
 from httpx import Response
 
-from hive.client import A2AClient, A2AClientError, A2ATaskRejected
+from hive.client import A2AClient, A2AClientError, A2ATaskRejectedError
 
 PEER_URL = "http://peer-agent:8462"
 
@@ -136,7 +136,7 @@ async def test_connection_refused_raises(client: A2AClient):
 @respx.mock
 @pytest.mark.asyncio
 async def test_rejected_task_raises(client: A2AClient):
-    """Rejected task raises A2ATaskRejected with reason."""
+    """Rejected task raises A2ATaskRejectedError with reason."""
     respx.post(PEER_URL).mock(
         return_value=Response(
             200,
@@ -158,7 +158,7 @@ async def test_rejected_task_raises(client: A2AClient):
         )
     )
 
-    with pytest.raises(A2ATaskRejected, match="at_capacity") as exc_info:
+    with pytest.raises(A2ATaskRejectedError, match="at_capacity") as exc_info:
         await client.send_task(
             peer_url=PEER_URL,
             message_text="do work",

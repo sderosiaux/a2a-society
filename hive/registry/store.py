@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 @dataclass
 class RegisteredAgent:
     card: dict
-    last_seen: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    last_seen: datetime = field(default_factory=lambda: datetime.now(UTC))
     status: str = "active"
 
 
@@ -23,16 +23,14 @@ class RegistryStore:
         name = agent_card["name"]
         if name in self._agents:
             self._agents[name].card = agent_card
-            self._agents[name].last_seen = datetime.now(timezone.utc)
+            self._agents[name].last_seen = datetime.now(UTC)
             self._agents[name].status = "active"
         else:
             self._agents[name] = RegisteredAgent(card=agent_card)
 
     def get_all(self) -> list[dict]:
         """Return all agent cards where status != offline."""
-        return [
-            a.card for a in self._agents.values() if a.status != "offline"
-        ]
+        return [a.card for a in self._agents.values() if a.status != "offline"]
 
     def get_by_name(self, name: str) -> dict | None:
         """Return a single agent card by name."""
@@ -70,7 +68,7 @@ class RegistryStore:
 
         Returns list of names marked offline.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         threshold = self._heartbeat_interval * 3
         marked: list[str] = []
         for name, entry in self._agents.items():

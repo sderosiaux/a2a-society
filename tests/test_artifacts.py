@@ -17,6 +17,7 @@ from tests.conftest import make_config, mock_context, mock_event_queue
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_org_memory(tmp_path, agent: str = "test-agent") -> OrgMemory:
     mem = OrgMemory(repo_url=None, local_path=str(tmp_path / "org-repo"), agent_name=agent)
     mem.init_or_clone()
@@ -39,6 +40,7 @@ def _short_response() -> str:
 # ---------------------------------------------------------------------------
 # 1. Response > 50 lines -> artifact committed, response contains ref + summary
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_large_response_committed_as_artifact(tmp_path):
@@ -74,6 +76,7 @@ async def test_large_response_committed_as_artifact(tmp_path):
 # 2. Response <= 50 lines -> inline, no artifact
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_short_response_returned_inline(tmp_path):
     org_mem = _make_org_memory(tmp_path)
@@ -97,6 +100,7 @@ async def test_short_response_returned_inline(tmp_path):
 # 3. No org_memory -> always inline, no error
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_no_org_memory_always_inline():
     config = _seo_config()
@@ -118,6 +122,7 @@ async def test_no_org_memory_always_inline():
 # ---------------------------------------------------------------------------
 # 4. Incoming message with artifact_ref -> content prepended to prompt
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_inbound_artifact_ref_prepends_content(tmp_path):
@@ -149,6 +154,7 @@ async def test_inbound_artifact_ref_prepends_content(tmp_path):
 # ---------------------------------------------------------------------------
 # 5. Incoming message without artifact_ref -> normal processing
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_inbound_no_artifact_ref_normal(tmp_path):
@@ -243,6 +249,7 @@ async def test_client_send_task_without_artifact_ref():
 # 7. Events logged on task receive and complete
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_events_logged_on_receive_and_complete(tmp_path):
     org_mem = _make_org_memory(tmp_path)
@@ -280,6 +287,7 @@ async def test_events_logged_on_receive_and_complete(tmp_path):
 # ---------------------------------------------------------------------------
 # Slugify role helper
 # ---------------------------------------------------------------------------
+
 
 def test_slugify_role():
     assert ClaudeExecutor._slugify_role("SEO Specialist") == "seo-specialist"

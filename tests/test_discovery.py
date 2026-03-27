@@ -19,9 +19,7 @@ REGISTRY = "http://registry:9999"
 async def test_register_posts_full_card():
     card = make_card("alpha", skills=[{"id": "seo", "name": "SEO"}])
     with respx.mock:
-        route = respx.post(f"{REGISTRY}/agents/register").mock(
-            return_value=httpx.Response(200, json={"status": "ok"})
-        )
+        route = respx.post(f"{REGISTRY}/agents/register").mock(return_value=httpx.Response(200, json={"status": "ok"}))
         client = DiscoveryClient(registry_url=REGISTRY)
         try:
             result = await client.register(card)
@@ -29,6 +27,7 @@ async def test_register_posts_full_card():
             assert route.called
             sent = route.calls[0].request
             import json
+
             body = json.loads(sent.content)
             assert body["name"] == "alpha"
             assert body["skills"][0]["id"] == "seo"
@@ -43,9 +42,7 @@ async def test_register_posts_full_card():
 async def test_discover_by_skill():
     card_a = make_card("alpha", skills=[{"id": "seo", "name": "SEO"}])
     with respx.mock:
-        respx.get(f"{REGISTRY}/agents/by-skill/seo").mock(
-            return_value=httpx.Response(200, json=[card_a])
-        )
+        respx.get(f"{REGISTRY}/agents/by-skill/seo").mock(return_value=httpx.Response(200, json=[card_a]))
         client = DiscoveryClient(registry_url=REGISTRY)
         try:
             results = await client.discover_by_skill("seo")
@@ -62,9 +59,7 @@ async def test_discover_by_skill():
 async def test_discover_all_updates_cache():
     cards = [make_card("alpha"), make_card("beta")]
     with respx.mock:
-        respx.get(f"{REGISTRY}/agents").mock(
-            return_value=httpx.Response(200, json=cards)
-        )
+        respx.get(f"{REGISTRY}/agents").mock(return_value=httpx.Response(200, json=cards))
         client = DiscoveryClient(registry_url=REGISTRY)
         try:
             results = await client.discover_all()
@@ -109,9 +104,7 @@ async def test_discover_all_fallback_to_cache():
 async def test_fetch_peer_cards():
     peer_card = make_card("peer-a")
     with respx.mock:
-        respx.get("http://peer-a:8462/.well-known/agent.json").mock(
-            return_value=httpx.Response(200, json=peer_card)
-        )
+        respx.get("http://peer-a:8462/.well-known/agent.json").mock(return_value=httpx.Response(200, json=peer_card))
         client = DiscoveryClient(peers=[{"url": "http://peer-a:8462"}])
         try:
             cards = await client.fetch_peer_cards()
@@ -130,9 +123,7 @@ async def test_fetch_peer_cards():
 async def test_heartbeat_fires_multiple_times():
     card = make_card("alpha")
     with respx.mock:
-        route = respx.post(f"{REGISTRY}/agents/register").mock(
-            return_value=httpx.Response(200, json={"status": "ok"})
-        )
+        route = respx.post(f"{REGISTRY}/agents/register").mock(return_value=httpx.Response(200, json={"status": "ok"}))
         client = DiscoveryClient(registry_url=REGISTRY)
         try:
             await client.start_heartbeat(card, interval=0.05)

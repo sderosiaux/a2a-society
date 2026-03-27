@@ -9,11 +9,13 @@ def _make_mgr(
     weekly: float = 50.0,
     per_task: float = 2.0,
 ) -> BudgetManager:
-    return BudgetManager(BudgetConfig(
-        daily_max_usd=daily,
-        weekly_max_usd=weekly,
-        per_task_max_usd=per_task,
-    ))
+    return BudgetManager(
+        BudgetConfig(
+            daily_max_usd=daily,
+            weekly_max_usd=weekly,
+            per_task_max_usd=per_task,
+        )
+    )
 
 
 def test_fresh_budget_allows_execution():

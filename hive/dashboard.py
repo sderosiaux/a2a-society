@@ -91,9 +91,7 @@ class HiveDashboard:
                         except Exception:
                             pass
 
-        return sorted(
-            all_events, key=lambda e: e.get("timestamp", ""), reverse=True
-        )[:limit]
+        return sorted(all_events, key=lambda e: e.get("timestamp", ""), reverse=True)[:limit]
 
     def build_activity_panel(self, events: list[dict]) -> Panel:
         """Build a panel showing recent activity."""
@@ -109,13 +107,9 @@ class HiveDashboard:
                 from_agent = e.get("from", "")
 
                 if from_agent:
-                    lines.append(
-                        f"[dim]{ts}[/dim]  {agent} <- {from_agent}  {summary}"
-                    )
+                    lines.append(f"[dim]{ts}[/dim]  {agent} <- {from_agent}  {summary}")
                 else:
-                    lines.append(
-                        f"[dim]{ts}[/dim]  {agent}  {event_type}: {summary}"
-                    )
+                    lines.append(f"[dim]{ts}[/dim]  {agent}  {event_type}: {summary}")
 
             content = "\n".join(lines)
 
@@ -128,12 +122,8 @@ class HiveDashboard:
             - a.get("hive", {}).get("budget", {}).get("remaining_today_usd", 0)
             for a in agents
         )
-        active = sum(
-            1 for a in agents if a.get("hive", {}).get("status") == "active"
-        )
-        vacation = sum(
-            1 for a in agents if a.get("hive", {}).get("status") == "vacation"
-        )
+        active = sum(1 for a in agents if a.get("hive", {}).get("status") == "active")
+        vacation = sum(1 for a in agents if a.get("hive", {}).get("status") == "vacation")
         return f"  Org spend today: ${total_spend:.2f}  |  Active: {active}  |  On vacation: {vacation}"
 
     def render(self) -> Layout:
@@ -155,13 +145,9 @@ class HiveDashboard:
 
     def run(self) -> None:
         """Run the live dashboard with auto-refresh."""
-        self._console.print(
-            "[bold]Hive Dashboard[/bold] -- press Ctrl+C to exit\n"
-        )
+        self._console.print("[bold]Hive Dashboard[/bold] -- press Ctrl+C to exit\n")
         try:
-            with Live(
-                self.render(), console=self._console, refresh_per_second=0.2
-            ) as live:
+            with Live(self.render(), console=self._console, refresh_per_second=0.2) as live:
                 while True:
                     time.sleep(self._refresh_interval)
                     live.update(self.render())

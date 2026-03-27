@@ -7,7 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from hive.config import load_config
-from hive.models import AgentConfig, BudgetConfig
+from hive.models import BudgetConfig
 
 
 @pytest.fixture()

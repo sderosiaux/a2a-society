@@ -79,10 +79,7 @@ async def _send_intro_message(
     skills_str = ", ".join(s.id for s in config.skills)
     objectives_str = ", ".join(config.objectives) if config.objectives else "none"
     intro = (
-        f"I just joined as {config.role}. "
-        f"My skills: [{skills_str}]. "
-        f"My objectives: [{objectives_str}]. "
-        f"How can I help?"
+        f"I just joined as {config.role}. My skills: [{skills_str}]. My objectives: [{objectives_str}]. How can I help?"
     )
     try:
         await a2a_client.send_task(
@@ -242,9 +239,7 @@ def create_app(config: AgentConfig, *, use_echo: bool = False) -> FastAPI:
                 fresh["hive"]["status"] = budget_mgr.status.value
                 return fresh
 
-            await discovery.start_heartbeat(
-                reg_card, card_builder=_heartbeat_card_builder
-            )
+            await discovery.start_heartbeat(reg_card, card_builder=_heartbeat_card_builder)
             await discovery.discover_all()
 
         if config.peers:
@@ -309,13 +304,9 @@ def create_app(config: AgentConfig, *, use_echo: bool = False) -> FastAPI:
             if request.url.path not in _PUBLIC_PATHS:
                 auth_header = request.headers.get("Authorization", "")
                 if not auth_header.startswith("Bearer "):
-                    return JSONResponse(
-                        {"detail": "Missing bearer token"}, status_code=401
-                    )
+                    return JSONResponse({"detail": "Missing bearer token"}, status_code=401)
                 if auth_header[7:] != config.auth_token:
-                    return JSONResponse(
-                        {"detail": "Invalid token"}, status_code=403
-                    )
+                    return JSONResponse({"detail": "Invalid token"}, status_code=403)
             return await call_next(request)
 
     # Eagerly set on state so it's available even without lifespan (tests)
@@ -387,10 +378,7 @@ def create_app(config: AgentConfig, *, use_echo: bool = False) -> FastAPI:
             # Re-queue parent task for synthesis with high priority
             tq: TaskQueue = request.app.state.task_queue
             subtask_results = tracker.get_subtask_results(parent_id)
-            results_summary = "\n".join(
-                f"- [{s.peer_name}] ({s.status}): {s.result}"
-                for s in subtask_results
-            )
+            results_summary = "\n".join(f"- [{s.peer_name}] ({s.status}): {s.result}" for s in subtask_results)
             synthesis_prompt = (
                 "Your delegated subtasks have completed. "
                 "Here are the results:\n"

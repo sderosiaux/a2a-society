@@ -53,7 +53,12 @@ def test_build_agent_table_empty(dash: HiveDashboard):
 def test_build_activity_panel_with_events(dash: HiveDashboard):
     events = [
         {"timestamp": "2026-03-27T10:00:00", "agent": "seo-agent", "event": "task_done", "summary": "Finished audit"},
-        {"timestamp": "2026-03-27T09:00:00", "agent": "writer-agent", "from": "seo-agent", "summary": "Delegated blog post"},
+        {
+            "timestamp": "2026-03-27T09:00:00",
+            "agent": "writer-agent",
+            "from": "seo-agent",
+            "summary": "Delegated blog post",
+        },
     ]
     panel = dash.build_activity_panel(events)
     assert isinstance(panel, Panel)

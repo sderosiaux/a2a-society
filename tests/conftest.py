@@ -61,9 +61,7 @@ class FakeQueue:
         metadata: dict,
         context_id: str = "",
     ) -> None:
-        self.tasks.append(
-            {"task_id": task_id, "message_text": message_text, "metadata": metadata}
-        )
+        self.tasks.append({"task_id": task_id, "message_text": message_text, "metadata": metadata})
 
 
 class FakeDiscovery:
@@ -95,9 +93,7 @@ class FakeA2AClient:
     def __init__(self) -> None:
         self.sent: list[dict] = []
 
-    async def send_task(
-        self, peer_url: str, message_text: str, from_agent: str, **kwargs
-    ) -> dict:
+    async def send_task(self, peer_url: str, message_text: str, from_agent: str, **kwargs) -> dict:
         self.sent.append(
             {
                 "peer_url": peer_url,
@@ -131,9 +127,7 @@ class FakeOrgMemory:
             "commit": "abc123",
             "size_lines": content.count("\n") + 1,
         }
-        self.written.append(
-            {"domain": domain, "filename": filename, "content": content, "ref": ref}
-        )
+        self.written.append({"domain": domain, "filename": filename, "content": content, "ref": ref})
         return ref
 
 

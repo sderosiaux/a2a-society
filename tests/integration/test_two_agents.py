@@ -16,7 +16,7 @@ from httpx import ASGITransport, AsyncClient
 
 from hive.models import AgentConfig
 from hive.registry.server import create_registry_app
-from hive.server import create_app, _build_registration_card
+from hive.server import _build_registration_card, create_app
 from hive.subtask_tracker import SubtaskTracker
 
 CONFIGS_DIR = Path(__file__).parent / "configs"
@@ -149,10 +149,7 @@ async def test_agent_a_receives_and_echoes(client_a: AsyncClient):
     assert result["status"]["state"] == "completed"
 
     parts = result["status"]["message"]["parts"]
-    assert any(
-        "[vp-marketing] received: Plan Q3 marketing campaign" in p["text"]
-        for p in parts
-    )
+    assert any("[vp-marketing] received: Plan Q3 marketing campaign" in p["text"] for p in parts)
 
 
 @pytest.mark.asyncio
@@ -167,10 +164,7 @@ async def test_agent_b_receives_and_echoes(client_b: AsyncClient):
     assert result["status"]["state"] == "completed"
 
     parts = result["status"]["message"]["parts"]
-    assert any(
-        "[seo-agent] received: Run SEO audit on blog.example.com" in p["text"]
-        for p in parts
-    )
+    assert any("[seo-agent] received: Run SEO audit on blog.example.com" in p["text"] for p in parts)
 
 
 @pytest.mark.asyncio
@@ -208,9 +202,7 @@ async def test_cross_agent_discovery(
 
 
 @pytest.mark.asyncio
-async def test_callback_simulates_completed_subtask(
-    client_a: AsyncClient, app_a
-):
+async def test_callback_simulates_completed_subtask(client_a: AsyncClient, app_a):
     """Send a callback to agent-a simulating a subtask completed by agent-b."""
     tracker: SubtaskTracker = app_a.state.subtask_tracker
 
@@ -238,9 +230,7 @@ async def test_callback_simulates_completed_subtask(
 
 
 @pytest.mark.asyncio
-async def test_status_endpoints(
-    client_a: AsyncClient, client_b: AsyncClient
-):
+async def test_status_endpoints(client_a: AsyncClient, client_b: AsyncClient):
     """Both agents' /status endpoints return correct metadata."""
     resp_a = await client_a.get("/status")
     assert resp_a.status_code == 200
@@ -260,9 +250,7 @@ async def test_status_endpoints(
 
 
 @pytest.mark.asyncio
-async def test_agent_cards_served(
-    client_a: AsyncClient, client_b: AsyncClient
-):
+async def test_agent_cards_served(client_a: AsyncClient, client_b: AsyncClient):
     """Both agents serve their A2A agent cards at well-known paths."""
     resp_a = await client_a.get("/.well-known/agent.json")
     assert resp_a.status_code == 200

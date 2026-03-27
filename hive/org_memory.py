@@ -3,11 +3,10 @@ from __future__ import annotations
 import json
 import logging
 import os
-import time
+from datetime import UTC, datetime, timedelta
 
 import git
 import yaml
-from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -134,7 +133,7 @@ class OrgMemory:
         Includes: timestamp, agent, event type, plus all data keys.
         Commit and push.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         date_dir = now.strftime("%Y-%m-%d")
         time_part = now.strftime("%H-%M-%S")
         filename = f"{time_part}-{self._agent_name}-{event_type}.yaml"
@@ -160,7 +159,7 @@ class OrgMemory:
         Append a JSON line to budget-logs/{agent_name}/YYYY-MM-DD.jsonl
         Commit and push.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         date_str = now.strftime("%Y-%m-%d")
         rel_path = os.path.join("budget-logs", self._agent_name, f"{date_str}.jsonl")
         full_path = self._safe_path(rel_path)
@@ -191,7 +190,7 @@ class OrgMemory:
             if until:
                 try:
                     expiry = datetime.fromisoformat(until)
-                    if datetime.now(timezone.utc) < expiry:
+                    if datetime.now(UTC) < expiry:
                         return False
                 except ValueError:
                     pass
@@ -199,9 +198,7 @@ class OrgMemory:
                 return False
 
         os.makedirs(os.path.dirname(full_lock), exist_ok=True)
-        now = datetime.now(timezone.utc)
-        until = now.timestamp() + timeout_seconds
-        until_dt = datetime.fromtimestamp(until, tz=timezone.utc)
+        until_dt = datetime.now(UTC) + timedelta(seconds=timeout_seconds)
 
         lock_content = {
             "agent": self._agent_name,
@@ -222,7 +219,7 @@ class OrgMemory:
             os.remove(full_lock)
             # Stage the removal
             self.repo.index.remove([rel_lock])
-            commit = self.repo.index.commit(f"unlock: {file_path} by {self._agent_name}")
+            self.repo.index.commit(f"unlock: {file_path} by {self._agent_name}")
 
             if self._has_remote():
                 try:

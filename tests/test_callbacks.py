@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 import pytest_asyncio
@@ -12,7 +12,6 @@ from hive.executor import delegate_to_peer
 from hive.models import AgentConfig, SkillDef
 from hive.server import create_app
 from hive.subtask_tracker import SubtaskTracker
-
 
 # -- SubtaskTracker unit tests -----------------------------------------------
 
@@ -207,9 +206,7 @@ async def test_callback_unknown_task_id(client: AsyncClient):
 async def test_delegate_to_peer_success():
     """Mock discovery + client, verify subtask registered in tracker."""
     mock_discovery = AsyncMock(spec=DiscoveryClient)
-    mock_discovery.discover_by_skill.return_value = [
-        {"name": "writer-agent", "url": "http://writer:8462"}
-    ]
+    mock_discovery.discover_by_skill.return_value = [{"name": "writer-agent", "url": "http://writer:8462"}]
 
     mock_client = AsyncMock(spec=A2AClient)
     mock_client.send_task.return_value = {

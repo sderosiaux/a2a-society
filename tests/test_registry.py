@@ -156,9 +156,7 @@ async def test_registry_auth_register_rejected(auth_client: AsyncClient):
 async def test_registry_auth_register_wrong_token(auth_client: AsyncClient):
     """POST /agents/register with wrong token returns 403."""
     card = make_card("agent-a")
-    resp = await auth_client.post(
-        "/agents/register", json=card, headers={"Authorization": "Bearer wrong"}
-    )
+    resp = await auth_client.post("/agents/register", json=card, headers={"Authorization": "Bearer wrong"})
     assert resp.status_code == 403
 
 

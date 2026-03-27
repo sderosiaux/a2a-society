@@ -84,9 +84,7 @@ async def test_send_intro_no_objectives():
         objectives=[],
     )
     fake_client = FakeA2AClient()
-    fake_discovery = FakeDiscovery(
-        all_agents=[{"name": "boss", "url": "http://boss:8462"}]
-    )
+    fake_discovery = FakeDiscovery(all_agents=[{"name": "boss", "url": "http://boss:8462"}])
     await _send_intro_message(config, fake_discovery, fake_client)
     assert len(fake_client.sent) == 1
     assert "none" in fake_client.sent[0]["message_text"]
@@ -109,14 +107,10 @@ async def test_heartbeat_calls_card_builder():
         return {"name": "fresh", "budget": call_count["n"]}
 
     with respx.mock:
-        respx.post(f"{REGISTRY}/agents/register").mock(
-            return_value=httpx.Response(200, json={"status": "ok"})
-        )
+        respx.post(f"{REGISTRY}/agents/register").mock(return_value=httpx.Response(200, json={"status": "ok"}))
         client = DiscoveryClient(registry_url=REGISTRY)
         try:
-            await client.start_heartbeat(
-                {"name": "stale"}, interval=0.05, card_builder=builder
-            )
+            await client.start_heartbeat({"name": "stale"}, interval=0.05, card_builder=builder)
             await asyncio.sleep(0.2)
             await client.stop_heartbeat()
             # Builder should have been called at least twice
@@ -129,9 +123,7 @@ async def test_heartbeat_calls_card_builder():
 async def test_heartbeat_without_builder_uses_static_card():
     """Heartbeat without card_builder posts the static card."""
     with respx.mock:
-        route = respx.post(f"{REGISTRY}/agents/register").mock(
-            return_value=httpx.Response(200, json={"status": "ok"})
-        )
+        route = respx.post(f"{REGISTRY}/agents/register").mock(return_value=httpx.Response(200, json={"status": "ok"}))
         client = DiscoveryClient(registry_url=REGISTRY)
         try:
             await client.start_heartbeat({"name": "static"}, interval=0.05)
@@ -265,9 +257,8 @@ async def test_budget_reset_loop_resets_daily():
             raise asyncio.CancelledError
         # Don't actually sleep
 
-    with patch("hive.server.asyncio.sleep", side_effect=fake_sleep):
-        with contextlib.suppress(asyncio.CancelledError):
-            await _budget_reset_loop(budget)
+    with patch("hive.server.asyncio.sleep", side_effect=fake_sleep), contextlib.suppress(asyncio.CancelledError):
+        await _budget_reset_loop(budget)
 
     # Daily should have been reset
     assert budget.spent_today == 0.0
@@ -288,9 +279,7 @@ async def test_vacation_notification_sent_on_budget_depletion():
     config = make_config(reports_to="boss")
     budget = BudgetManager(BudgetConfig(daily_max_usd=2.0, per_task_max_usd=5.0))
     fake_client = FakeA2AClient()
-    fake_discovery = FakeDiscovery(
-        all_agents=[{"name": "boss", "url": "http://boss:8462"}]
-    )
+    fake_discovery = FakeDiscovery(all_agents=[{"name": "boss", "url": "http://boss:8462"}])
 
     executor = ClaudeExecutor(
         config,
@@ -323,9 +312,7 @@ async def test_no_vacation_notification_when_still_active():
     config = make_config(reports_to="boss")
     budget = BudgetManager(BudgetConfig(daily_max_usd=10.0, per_task_max_usd=5.0))
     fake_client = FakeA2AClient()
-    fake_discovery = FakeDiscovery(
-        all_agents=[{"name": "boss", "url": "http://boss:8462"}]
-    )
+    fake_discovery = FakeDiscovery(all_agents=[{"name": "boss", "url": "http://boss:8462"}])
 
     executor = ClaudeExecutor(
         config,

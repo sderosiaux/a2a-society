@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -21,17 +21,13 @@ class SubtaskTracker:
         self._parent_to_subtasks: dict[str, list[SubtaskInfo]] = {}
         self._subtask_to_parent: dict[str, str] = {}
 
-    def register_subtask(
-        self, parent_task_id: str, subtask_id: str, peer_name: str
-    ) -> None:
+    def register_subtask(self, parent_task_id: str, subtask_id: str, peer_name: str) -> None:
         """Register a new subtask under a parent task."""
         info = SubtaskInfo(subtask_id=subtask_id, peer_name=peer_name)
         self._parent_to_subtasks.setdefault(parent_task_id, []).append(info)
         self._subtask_to_parent[subtask_id] = parent_task_id
 
-    def complete_subtask(
-        self, subtask_id: str, result: dict | None = None
-    ) -> str | None:
+    def complete_subtask(self, subtask_id: str, result: dict | None = None) -> str | None:
         """Mark a subtask as completed with optional result.
 
         Returns parent_task_id if ALL subtasks for that parent are now done.

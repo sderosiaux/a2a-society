@@ -36,9 +36,7 @@ class DiscoveryClient:
         if not self._registry_url:
             return False
         try:
-            resp = await self._http.post(
-                f"{self._registry_url}/agents/register", json=agent_card
-            )
+            resp = await self._http.post(f"{self._registry_url}/agents/register", json=agent_card)
             resp.raise_for_status()
             return True
         except Exception as exc:
@@ -67,9 +65,7 @@ class DiscoveryClient:
         if not self._registry_url:
             return []
         try:
-            resp = await self._http.get(
-                f"{self._registry_url}/agents/by-skill/{skill_id}"
-            )
+            resp = await self._http.get(f"{self._registry_url}/agents/by-skill/{skill_id}")
             resp.raise_for_status()
             return resp.json()
         except Exception as exc:
@@ -81,9 +77,7 @@ class DiscoveryClient:
         if not self._registry_url:
             return []
         try:
-            resp = await self._http.get(
-                f"{self._registry_url}/agents/by-role/{role}"
-            )
+            resp = await self._http.get(f"{self._registry_url}/agents/by-role/{role}")
             resp.raise_for_status()
             return resp.json()
         except Exception as exc:
@@ -105,9 +99,7 @@ class DiscoveryClient:
         """
         if self._heartbeat_task is not None:
             return
-        self._heartbeat_task = asyncio.create_task(
-            self._heartbeat_loop(agent_card, interval, card_builder)
-        )
+        self._heartbeat_task = asyncio.create_task(self._heartbeat_loop(agent_card, interval, card_builder))
 
     async def _heartbeat_loop(
         self,

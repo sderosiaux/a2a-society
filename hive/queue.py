@@ -67,9 +67,7 @@ class TaskQueue:
         """Add task to queue. Raises TaskQueueFullError if at max_backlog."""
         async with self._cond:
             if len(self._queue) >= self._max_backlog:
-                raise TaskQueueFullError(
-                    f"Queue full ({self._max_backlog} tasks)"
-                )
+                raise TaskQueueFullError(f"Queue full ({self._max_backlog} tasks)")
             priority = self._classify_priority(metadata)
             task = QueuedTask(
                 priority=int(priority),

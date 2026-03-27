@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from hive.models import BudgetConfig, BudgetStatus
 
@@ -94,7 +94,7 @@ class BudgetManager:
     def to_log_entry(self) -> dict:
         """Return a dict for appending to budget-logs JSONL."""
         return {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "spent_today": self._spent_today,
             "spent_week": self._spent_week,
             "remaining_today": self.remaining_today,

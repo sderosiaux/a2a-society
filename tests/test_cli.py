@@ -100,9 +100,7 @@ def test_leave_with_auth_token(runner: CliRunner):
     mock_response = MagicMock()
     mock_response.status_code = 200
     with patch("httpx.post", return_value=mock_response) as mock_post:
-        result = runner.invoke(
-            cli, ["leave", "--port", "9999", "--auth-token", "secret"]
-        )
+        result = runner.invoke(cli, ["leave", "--port", "9999", "--auth-token", "secret"])
     assert result.exit_code == 0
     call_kwargs = mock_post.call_args
     assert call_kwargs[1]["headers"]["Authorization"] == "Bearer secret"

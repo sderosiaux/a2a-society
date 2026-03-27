@@ -58,9 +58,7 @@ class EchoExecutor(AgentExecutor):
     def __init__(self, agent_name: str) -> None:
         self.agent_name = agent_name
 
-    async def execute(
-        self, context: RequestContext, event_queue: EventQueue
-    ) -> None:
+    async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         task_id = context.task_id
         context_id = context.context_id
         updater = TaskUpdater(event_queue, task_id, context_id)
@@ -73,13 +71,9 @@ class EchoExecutor(AgentExecutor):
         )
         await updater.complete(response)
 
-    async def cancel(
-        self, context: RequestContext, event_queue: EventQueue
-    ) -> None:
+    async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
         if context.current_task:
-            updater = TaskUpdater(
-                event_queue, context.task_id, context.context_id
-            )
+            updater = TaskUpdater(event_queue, context.task_id, context.context_id)
             await updater.cancel()
 
 
@@ -157,9 +151,7 @@ class ClaudeExecutor(AgentExecutor):
         )
         logger.info("Sent vacation notification to %s", self.config.reports_to)
 
-    async def execute(
-        self, context: RequestContext, event_queue: EventQueue
-    ) -> None:
+    async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         """Route the task through the priority queue if available.
 
         If queue is full, reject the task immediately.
@@ -209,9 +201,7 @@ class ClaudeExecutor(AgentExecutor):
             # No queue: execute inline (tests, simple setups)
             await self._execute_task(context, event_queue)
 
-    async def _execute_task(
-        self, context: RequestContext, event_queue: EventQueue
-    ) -> None:
+    async def _execute_task(self, context: RequestContext, event_queue: EventQueue) -> None:
         """Core execution logic: call Claude, handle delegation, complete task."""
         from hive.claude import invoke_claude
 
@@ -256,9 +246,7 @@ class ClaudeExecutor(AgentExecutor):
             except Exception:
                 logger.warning("Failed to log task_received event for %s", task_id)
 
-        system_prompt = build_system_prompt(
-            self.config, knowledge_content=self.knowledge_content
-        )
+        system_prompt = build_system_prompt(self.config, knowledge_content=self.knowledge_content)
 
         response_text, cost_usd, _session_id = await invoke_claude(
             prompt=text,
@@ -274,9 +262,7 @@ class ClaudeExecutor(AgentExecutor):
             prev_status = self.budget.status
             new_status = self.budget.record_cost(cost_usd)
             if new_status != prev_status:
-                logger.info(
-                    "Budget status changed: %s -> %s", prev_status.value, new_status.value
-                )
+                logger.info("Budget status changed: %s -> %s", prev_status.value, new_status.value)
 
             # I4: Write budget log to org-memory
             if self.org_memory:
@@ -286,12 +272,7 @@ class ClaudeExecutor(AgentExecutor):
                     logger.warning("Failed to write budget log for task %s", task_id)
 
             # I6: Notify superior on vacation
-            if (
-                new_status != prev_status
-                and new_status == BudgetStatus.vacation
-                and self.discovery
-                and self.a2a_client
-            ):
+            if new_status != prev_status and new_status == BudgetStatus.vacation and self.discovery and self.a2a_client:
                 try:
                     await self._notify_vacation()
                 except Exception:
@@ -373,13 +354,9 @@ class ClaudeExecutor(AgentExecutor):
 
         await updater.complete(response)
 
-    async def cancel(
-        self, context: RequestContext, event_queue: EventQueue
-    ) -> None:
+    async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
         if context.current_task:
-            updater = TaskUpdater(
-                event_queue, context.task_id, context.context_id
-            )
+            updater = TaskUpdater(event_queue, context.task_id, context.context_id)
             await updater.cancel()
 
 
@@ -430,9 +407,7 @@ class TaskWorker:
             try:
                 await self._process(queued)
             except Exception:
-                logger.exception(
-                    "Worker failed processing task %s", queued.task_id
-                )
+                logger.exception("Worker failed processing task %s", queued.task_id)
                 # Resolve the pending future with an error so the
                 # execute() caller doesn't hang forever
                 future = self._executor._pending_futures.get(queued.task_id)
@@ -440,9 +415,7 @@ class TaskWorker:
                     future.set_result(None)
 
     async def _process(self, queued: QueuedTask) -> None:
-        logger.info(
-            "Processing task %s (priority=%s)", queued.task_id, queued.priority
-        )
+        logger.info("Processing task %s (priority=%s)", queued.task_id, queued.priority)
         future = self._executor._pending_futures.get(queued.task_id)
         if future is not None:
             # Execute using the stored context/event_queue from the future

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import yaml
@@ -75,7 +75,7 @@ def test_append_event_creates_yaml(tmp_path):
     mem = _make_memory(tmp_path)
     mem.append_event("task_completed", {"task_id": "42", "result": "ok"})
 
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
     events_dir = os.path.join(str(tmp_path / "repo"), "events", today)
     assert os.path.isdir(events_dir)
 
@@ -101,7 +101,7 @@ def test_append_budget_log_creates_jsonl(tmp_path):
     mem.append_budget_log({"cost": 1.5, "task": "t1"})
     mem.append_budget_log({"cost": 0.3, "task": "t2"})
 
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
     log_path = os.path.join(str(tmp_path / "repo"), "budget-logs", "alice", f"{today}.jsonl")
     assert os.path.isfile(log_path)
 
@@ -133,7 +133,7 @@ def test_list_events_filters_by_date(tmp_path):
     mem = _make_memory(tmp_path)
     mem.append_event("ev1", {})
 
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
     assert len(mem.list_events(date=today)) == 1
     assert len(mem.list_events(date="1999-01-01")) == 0
 
@@ -235,7 +235,7 @@ def test_expired_lock_can_be_overwritten(tmp_path):
     lock_path = os.path.join(str(tmp_path / "repo"), ".lock", "resource.txt.lock")
     expired = {
         "agent": "alice",
-        "until": (datetime.now(timezone.utc) - timedelta(seconds=10)).isoformat(),
+        "until": (datetime.now(UTC) - timedelta(seconds=10)).isoformat(),
     }
     with open(lock_path, "w") as f:
         json.dump(expired, f)

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import re
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from hive.budget import BudgetManager
 from hive.client import A2AClient
@@ -56,10 +58,8 @@ class InitiativeLoop:
         self._running = False
         if self._task:
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._task
-            except asyncio.CancelledError:
-                pass
 
     async def _loop(self) -> None:
         while self._running:
@@ -78,9 +78,7 @@ class InitiativeLoop:
 
         # 2. Gather context
         context_parts = []
-        context_parts.append(
-            "Your objectives:\n" + "\n".join(f"- {o}" for o in self._config.objectives)
-        )
+        context_parts.append("Your objectives:\n" + "\n".join(f"- {o}" for o in self._config.objectives))
 
         if self._org_memory:
             try:
@@ -147,7 +145,7 @@ Respond with JSON only:
         elif action == "self_task" and self._queue:
             description = decision.get("description", "Self-assigned task")
             await self._queue.enqueue(
-                task_id=f"initiative-{datetime.now(timezone.utc).strftime('%H%M%S')}",
+                task_id=f"initiative-{datetime.now(UTC).strftime('%H%M%S')}",
                 message_text=description,
                 metadata={"from_agent": self._config.name, "priority": "normal"},
             )
@@ -177,11 +175,7 @@ Respond with JSON only:
                 logger.info("Initiative: report sent, artifact_ref=%s", ref)
 
         # Check if periodic report is due (regardless of decision)
-        if (
-            self._report_generator
-            and action != "report"
-            and self._report_generator.should_report()
-        ):
+        if self._report_generator and action != "report" and self._report_generator.should_report():
             logger.info("Initiative: periodic report due")
             ref = await self._report_generator.generate_and_send()
             logger.info("Initiative: periodic report sent, artifact_ref=%s", ref)

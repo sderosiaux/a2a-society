@@ -3,18 +3,16 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from hive.executor import parse_delegation
-from hive.models import AgentConfig, BudgetConfig, SkillDef
+from hive.models import AgentConfig, SkillDef
 from hive.queue import TaskPriority, TaskQueue, TaskQueueFullError
 from hive.server import create_app
 from hive.subtask_tracker import SubtaskTracker
-
 
 # ---------------------------------------------------------------------------
 # C5: parse_delegation tests
@@ -124,7 +122,6 @@ async def test_condition_priority_preserved_under_concurrency():
 async def test_condition_notify_wakes_blocked_dequeue():
     """Dequeue blocks until enqueue notifies via Condition."""
     q = TaskQueue(max_backlog=5)
-    dequeued = []
 
     async def slow_enqueue():
         await asyncio.sleep(0.05)

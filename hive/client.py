@@ -9,7 +9,7 @@ class A2AClientError(Exception):
     """Generic A2A client error."""
 
 
-class A2ATaskRejected(A2AClientError):
+class A2ATaskRejectedError(A2AClientError):
     """Task was rejected by the peer (at_capacity, on_vacation, etc.)."""
 
     def __init__(self, reason: str, resume_at: str | None = None):
@@ -69,9 +69,7 @@ class A2AClient:
             resp = await self._http.post(peer_url, json=payload)
             resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            raise A2AClientError(
-                f"HTTP {exc.response.status_code} from {peer_url}"
-            ) from exc
+            raise A2AClientError(f"HTTP {exc.response.status_code} from {peer_url}") from exc
         except httpx.HTTPError as exc:
             raise A2AClientError(f"Connection error to {peer_url}: {exc}") from exc
 
@@ -89,11 +87,9 @@ class A2AClient:
 
         # Rejected task
         if state == "rejected":
-            reason = status.get("message", {}).get("parts", [{}])[0].get(
-                "text", "unknown reason"
-            )
+            reason = status.get("message", {}).get("parts", [{}])[0].get("text", "unknown reason")
             resume_at = status.get("timestamp")
-            raise A2ATaskRejected(reason=reason, resume_at=resume_at)
+            raise A2ATaskRejectedError(reason=reason, resume_at=resume_at)
 
         return {
             "task_id": result.get("id"),

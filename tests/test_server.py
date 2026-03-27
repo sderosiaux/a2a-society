@@ -142,18 +142,14 @@ async def test_auth_status_rejected_without_token(auth_client: AsyncClient):
 @pytest.mark.asyncio
 async def test_auth_status_rejected_wrong_token(auth_client: AsyncClient):
     """GET /status with wrong token returns 403."""
-    resp = await auth_client.get(
-        "/status", headers={"Authorization": "Bearer wrong-token"}
-    )
+    resp = await auth_client.get("/status", headers={"Authorization": "Bearer wrong-token"})
     assert resp.status_code == 403
 
 
 @pytest.mark.asyncio
 async def test_auth_status_accepted_with_token(auth_client: AsyncClient):
     """GET /status with correct token returns 200."""
-    resp = await auth_client.get(
-        "/status", headers={"Authorization": f"Bearer {AUTH_TOKEN}"}
-    )
+    resp = await auth_client.get("/status", headers={"Authorization": f"Bearer {AUTH_TOKEN}"})
     assert resp.status_code == 200
     assert resp.json()["name"] == "auth-agent"
 
@@ -192,9 +188,7 @@ async def test_auth_rpc_accepted_with_token(auth_client: AsyncClient):
             }
         },
     }
-    resp = await auth_client.post(
-        "/", json=payload, headers={"Authorization": f"Bearer {AUTH_TOKEN}"}
-    )
+    resp = await auth_client.post("/", json=payload, headers={"Authorization": f"Bearer {AUTH_TOKEN}"})
     assert resp.status_code == 200
 
 

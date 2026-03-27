@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi import Depends, FastAPI, HTTPException
 
 from hive.auth import require_auth
 from hive.registry.store import RegistryStore
@@ -24,10 +24,8 @@ def create_registry_app(
         task = asyncio.create_task(_heartbeat_loop(store, heartbeat_interval))
         yield
         task.cancel()
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await task
-        except asyncio.CancelledError:
-            pass
 
     app = FastAPI(title="Hive Registry", lifespan=lifespan)
     # Expose store for testing.

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Awaitable, Callable
 
 from hive.client import A2AClient
 from hive.discovery import DiscoveryClient
@@ -63,7 +63,7 @@ class ReportGenerator:
         if self._last_report is None:
             return True
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         freq = self._config.reporting.frequency
         if freq == "hourly":
             delta = 3600
@@ -109,7 +109,7 @@ class ReportGenerator:
         system_prompt = build_system_prompt(self._config)
 
         try:
-            report_text, cost, _ = await self._claude_fn(context, system_prompt)
+            report_text, _cost, _ = await self._claude_fn(context, system_prompt)
         except Exception as e:
             logger.error("Report generation failed: %s", e)
             return None
@@ -117,7 +117,7 @@ class ReportGenerator:
         # 3. Commit to org-memory
         artifact_ref = None
         domain = self._config.role.lower().split()[0] if self._config.role else self._config.name
-        date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        date_str = datetime.now(UTC).strftime("%Y-%m-%d")
         filename = f"reports/{date_str}-status.md"
 
         if self._org_memory:
@@ -130,9 +130,7 @@ class ReportGenerator:
                 # Also try by name
                 if not peers:
                     peers = [
-                        p
-                        for p in (await self._discovery.discover_all())
-                        if p.get("name") == self._config.reporting.to
+                        p for p in (await self._discovery.discover_all()) if p.get("name") == self._config.reporting.to
                     ]
 
                 if peers:
@@ -147,7 +145,7 @@ class ReportGenerator:
                 logger.warning("Failed to send report to superior: %s", e)
 
         # 5. Update timestamp
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         self._last_report = now
         self._save_last_report(now)
 

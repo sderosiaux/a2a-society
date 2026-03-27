@@ -25,9 +25,28 @@ def cli():
 @click.option("--port", default=8462, type=int, help="HTTP port")
 @click.option("--host", default="127.0.0.1", help="HTTP host")
 @click.option("--auth-token", default=None, help="Bearer token for authentication")
-@click.option("--config", default=None, type=click.Path(exists=True), help="Path to agent-config.yaml (overrides all other flags)")
-def join(role, name, reports_to, skills, tools, objectives, knowledge, report_frequency,
-         budget_daily, budget_weekly, initiative_interval, registry, org_memory, port, host, auth_token, config):
+@click.option(
+    "--config", default=None, type=click.Path(exists=True), help="Path to agent-config.yaml (overrides all other flags)"
+)
+def join(
+    role,
+    name,
+    reports_to,
+    skills,
+    tools,
+    objectives,
+    knowledge,
+    report_frequency,
+    budget_daily,
+    budget_weekly,
+    initiative_interval,
+    registry,
+    org_memory,
+    port,
+    host,
+    auth_token,
+    config,
+):
     """Join the Hive network as an agent."""
 
     if config:

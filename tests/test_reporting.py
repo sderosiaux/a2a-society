@@ -88,9 +88,16 @@ def test_should_report_true_interval_elapsed(tmp_path):
 @pytest.mark.asyncio
 async def test_generate_and_send_commits_to_org_memory(tmp_path):
     """Report is committed as artifact, returns artifact_ref."""
-    org = FakeOrgMemory(events=[
-        {"agent": "eng-lead", "timestamp": "2026-03-27T10:00:00", "event": "task_done", "summary": "Shipped v2 API"},
-    ])
+    org = FakeOrgMemory(
+        events=[
+            {
+                "agent": "eng-lead",
+                "timestamp": "2026-03-27T10:00:00",
+                "event": "task_done",
+                "summary": "Shipped v2 API",
+            },
+        ]
+    )
     config = _report_config(reporting=ReportingConfig(to="cto", frequency="daily"))
 
     rg = ReportGenerator(
