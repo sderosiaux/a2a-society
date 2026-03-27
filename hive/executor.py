@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
@@ -11,6 +12,7 @@ from hive.client import A2AClient
 from hive.discovery import DiscoveryClient
 from hive.models import AgentConfig
 from hive.prompt_builder import build_system_prompt
+from hive.queue import QueuedTask, TaskQueue
 from hive.subtask_tracker import SubtaskTracker
 
 logger = logging.getLogger(__name__)
@@ -100,6 +102,48 @@ def create_executor(config: AgentConfig, *, use_echo: bool = False) -> AgentExec
     if use_echo:
         return EchoExecutor(config.name)
     return ClaudeExecutor(config)
+
+
+class TaskWorker:
+    """Background worker that processes tasks from the queue one at a time."""
+
+    def __init__(self, queue: TaskQueue, executor: AgentExecutor) -> None:
+        self._queue = queue
+        self._executor = executor
+        self._running = False
+        self._task: asyncio.Task | None = None
+
+    async def start(self) -> None:
+        """Start the worker loop as a background task."""
+        self._running = True
+        self._task = asyncio.create_task(self._run())
+
+    async def _run(self) -> None:
+        while self._running:
+            queued = await self._queue.dequeue()
+            try:
+                await self._process(queued)
+            except Exception:
+                logger.exception(
+                    "Worker failed processing task %s", queued.task_id
+                )
+
+    async def _process(self, queued: QueuedTask) -> None:
+        logger.info(
+            "Processing task %s (priority=%s)", queued.task_id, queued.priority
+        )
+        # Future: create RequestContext + EventQueue and call executor.execute()
+        # For now, log that the task was dequeued for processing.
+
+    async def stop(self) -> None:
+        self._running = False
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+            self._task = None
 
 
 async def delegate_to_peer(
