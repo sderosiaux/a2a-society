@@ -21,6 +21,7 @@ class InitiativeLoop:
         discovery=None,   # DiscoveryClient | None
         budget=None,      # BudgetManager | None
         queue=None,       # TaskQueue | None
+        report_generator=None,  # ReportGenerator | None
     ):
         self._config = config
         self._claude_fn = claude_fn
@@ -29,6 +30,7 @@ class InitiativeLoop:
         self._discovery = discovery
         self._budget = budget
         self._queue = queue
+        self._report_generator = report_generator
         self._interval = config.initiative_interval_minutes * 60  # seconds
         self._running = False
         self._task: asyncio.Task | None = None
@@ -158,7 +160,19 @@ Respond with JSON only:
                         logger.warning("Initiative delegation failed: %s", e)
 
         elif action == "report":
-            logger.info("Initiative: reporting triggered (handled by reporting module)")
-            # Actual report generation handled by Task 7.2 reporting.py
+            logger.info("Initiative: reporting triggered by decision")
+            if self._report_generator:
+                ref = await self._report_generator.generate_and_send()
+                logger.info("Initiative: report sent, artifact_ref=%s", ref)
+
+        # Check if periodic report is due (regardless of decision)
+        if (
+            self._report_generator
+            and action != "report"
+            and self._report_generator.should_report()
+        ):
+            logger.info("Initiative: periodic report due")
+            ref = await self._report_generator.generate_and_send()
+            logger.info("Initiative: periodic report sent, artifact_ref=%s", ref)
 
         return decision
