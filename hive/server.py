@@ -15,8 +15,10 @@ from a2a.server.tasks import InMemoryTaskStore
 from a2a.types import AgentCapabilities, AgentCard, AgentSkill
 
 from hive.budget import BudgetManager
+from hive.client import A2AClient
 from hive.discovery import DiscoveryClient
 from hive.executor import create_executor
+from hive.initiative import InitiativeLoop
 from hive.models import AgentConfig
 from hive.subtask_tracker import SubtaskTracker
 
@@ -99,8 +101,28 @@ def create_app(config: AgentConfig, *, use_echo: bool = False) -> FastAPI:
             await discovery.fetch_peer_cards()
         app.state.discovery = discovery  # type: ignore[attr-defined]
         app.state.subtask_tracker = subtask_tracker  # type: ignore[attr-defined]
+
+        # Start initiative loop if agent has objectives
+        initiative: InitiativeLoop | None = None
+        if config.objectives:
+            from hive.claude import invoke_claude
+
+            a2a_client = A2AClient()
+            initiative = InitiativeLoop(
+                config=config,
+                claude_fn=invoke_claude,
+                client=a2a_client,
+                discovery=discovery,
+                budget=budget_mgr,
+                queue=None,  # queue wiring added when TaskWorker is integrated
+            )
+            await initiative.start()
+            app.state.initiative = initiative  # type: ignore[attr-defined]
+
         yield
         # Shutdown
+        if initiative:
+            await initiative.stop()
         await discovery.stop_heartbeat()
         await discovery.close()
 
