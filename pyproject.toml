@@ -17,6 +17,9 @@ dependencies = [
     "pyyaml",
 ]
 
+[project.scripts]
+hive = "hive.cli:cli"
+
 [project.optional-dependencies]
 dev = [
     "pytest",
