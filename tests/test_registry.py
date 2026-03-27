@@ -143,3 +143,63 @@ async def test_deregister(app, client: AsyncClient):
 
     resp = await client.get("/agents")
     assert len(resp.json()) == 0
+
+
+# -- Auth tests for registry --------------------------------------------------
+
+REG_TOKEN = "registry-secret"
+
+
+@pytest.fixture()
+def auth_app():
+    return create_registry_app(heartbeat_interval=60, auth_token=REG_TOKEN)
+
+
+@pytest_asyncio.fixture()
+async def auth_client(auth_app):
+    transport = ASGITransport(app=auth_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c
+
+
+@pytest.mark.asyncio
+async def test_registry_auth_register_rejected(auth_client: AsyncClient):
+    """POST /agents/register without token returns 401."""
+    card = _make_card("agent-a")
+    resp = await auth_client.post("/agents/register", json=card)
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_registry_auth_register_wrong_token(auth_client: AsyncClient):
+    """POST /agents/register with wrong token returns 403."""
+    card = _make_card("agent-a")
+    resp = await auth_client.post(
+        "/agents/register", json=card, headers={"Authorization": "Bearer wrong"}
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_registry_auth_register_accepted(auth_client: AsyncClient):
+    """POST /agents/register with correct token returns 200."""
+    card = _make_card("agent-a")
+    resp = await auth_client.post(
+        "/agents/register",
+        json=card,
+        headers={"Authorization": f"Bearer {REG_TOKEN}"},
+    )
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_registry_auth_get_endpoints_public(auth_client: AsyncClient):
+    """GET endpoints remain public even with auth enabled."""
+    resp = await auth_client.get("/agents")
+    assert resp.status_code == 200
+
+    resp = await auth_client.get("/agents/by-skill/seo")
+    assert resp.status_code == 200
+
+    resp = await auth_client.get("/agents/by-role/Engineer")
+    assert resp.status_code == 200

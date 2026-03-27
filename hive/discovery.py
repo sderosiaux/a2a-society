@@ -16,11 +16,15 @@ class DiscoveryClient:
         self,
         registry_url: str | None = None,
         peers: list[dict[str, Any]] | None = None,
+        auth_token: str | None = None,
     ) -> None:
         self._registry_url = registry_url
         self._cache: dict[str, dict[str, Any]] = {}  # name -> agent card
         self._static_peers = peers or []
-        self._http = httpx.AsyncClient(timeout=10.0)
+        headers = {}
+        if auth_token:
+            headers["Authorization"] = f"Bearer {auth_token}"
+        self._http = httpx.AsyncClient(timeout=10.0, headers=headers)
         self._heartbeat_task: asyncio.Task[None] | None = None
 
     # -- registry interactions ------------------------------------------------

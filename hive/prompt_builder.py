@@ -30,7 +30,6 @@ def build_system_prompt(
     lines.append("1. Evaluate if you can do it alone with your tools")
     lines.append(
         "2. If you need a skill you don't have, identify which skill is needed"
-        " (you will be able to delegate via A2A)"
     )
     lines.append(
         "3. If the decision is above your scope, escalate to your superior"
@@ -39,6 +38,17 @@ def build_system_prompt(
     lines.append(
         "5. When all subtasks complete, synthesize and respond"
     )
+
+    # Delegation instructions
+    lines.append("")
+    lines.append(
+        "When you need to delegate work to a specialist, include this JSON block"
+        " in your response:"
+    )
+    lines.append(
+        '{"delegate": {"skill": "<skill_id>", "message": "<what you need them to do>"}}'
+    )
+    lines.append("Only include this block when you genuinely need another agent's help.")
 
     if config.tools:
         lines.append("")

@@ -232,12 +232,9 @@ async def test_callback_simulates_completed_subtask(
     assert data["ok"] is True
     assert data["parent_ready"] is True
 
-    # Verify tracker state
+    # After callback resolves parent, cleanup removes tracking data
     results = tracker.get_subtask_results("parent-task-1")
-    assert len(results) == 1
-    assert results[0].status == "completed"
-    assert results[0].result == {"text": "SEO audit complete: 42 issues found"}
-    assert results[0].peer_name == "seo-agent"
+    assert results == []
 
 
 @pytest.mark.asyncio
@@ -336,7 +333,6 @@ async def test_full_flow_register_discover_send_callback(
     assert resp.json()["ok"] is True
     assert resp.json()["parent_ready"] is True
 
-    # 6. Verify final state
+    # 6. After callback resolves parent, cleanup removes tracking data
     results = tracker.get_subtask_results("parent-improve-seo")
-    assert len(results) == 1
-    assert results[0].status == "completed"
+    assert results == []

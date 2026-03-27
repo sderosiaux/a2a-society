@@ -21,8 +21,11 @@ class A2ATaskRejected(A2AClientError):
 class A2AClient:
     """Client for sending A2A tasks to peer agents."""
 
-    def __init__(self) -> None:
-        self._http = httpx.AsyncClient(timeout=30.0)
+    def __init__(self, auth_token: str | None = None) -> None:
+        headers = {}
+        if auth_token:
+            headers["Authorization"] = f"Bearer {auth_token}"
+        self._http = httpx.AsyncClient(timeout=30.0, headers=headers)
 
     async def send_task(
         self,

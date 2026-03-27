@@ -5,6 +5,7 @@ import os
 import time
 from datetime import datetime, timezone, timedelta
 
+import pytest
 import yaml
 
 from hive.org_memory import OrgMemory
@@ -188,6 +189,41 @@ def test_release_then_acquire_succeeds(tmp_path):
     mem.acquire_lock("resource.txt")
     mem.release_lock("resource.txt")
     assert mem.acquire_lock("resource.txt") is True
+
+
+# --- path traversal ---
+
+
+def test_read_file_path_traversal_blocked(tmp_path):
+    mem = _make_memory(tmp_path)
+    with pytest.raises(ValueError, match="Path traversal blocked"):
+        mem.read_file("../../etc/passwd")
+
+
+def test_write_artifact_path_traversal_blocked(tmp_path):
+    mem = _make_memory(tmp_path)
+    with pytest.raises(ValueError, match="Path traversal blocked"):
+        mem.write_artifact("../../etc", "evil.txt", "pwned")
+
+
+def test_acquire_lock_path_traversal_blocked(tmp_path):
+    mem = _make_memory(tmp_path)
+    with pytest.raises(ValueError, match="Path traversal blocked"):
+        mem.acquire_lock("../../etc/passwd")
+
+
+def test_release_lock_path_traversal_blocked(tmp_path):
+    mem = _make_memory(tmp_path)
+    with pytest.raises(ValueError, match="Path traversal blocked"):
+        mem.release_lock("../../etc/passwd")
+
+
+def test_safe_path_allows_normal_paths(tmp_path):
+    mem = _make_memory(tmp_path)
+    # Normal paths should work fine
+    assert mem.read_file("does/not/exist.txt") is None
+    mem.write_artifact("reports", "q1.md", "content")
+    assert mem.read_file(os.path.join("artifacts", "reports", "q1.md")) == "content"
 
 
 def test_expired_lock_can_be_overwritten(tmp_path):

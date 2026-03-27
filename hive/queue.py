@@ -29,14 +29,16 @@ class TaskQueueFullError(Exception):
 
 
 class TaskQueue:
-    """Priority-sorted task inbox for an agent."""
+    """Priority-sorted task inbox for an agent.
+
+    Uses asyncio.Condition for race-free enqueue/dequeue coordination.
+    """
 
     def __init__(self, max_backlog: int = 10, agent_superior: str | None = None):
         self._queue: list[QueuedTask] = []
         self._max_backlog = max_backlog
         self._agent_superior = agent_superior
-        self._lock = asyncio.Lock()
-        self._not_empty = asyncio.Event()
+        self._cond = asyncio.Condition()
 
     def _classify_priority(self, metadata: dict) -> TaskPriority:
         """Determine priority based on metadata.
@@ -63,7 +65,7 @@ class TaskQueue:
         context_id: str = "",
     ) -> None:
         """Add task to queue. Raises TaskQueueFullError if at max_backlog."""
-        async with self._lock:
+        async with self._cond:
             if len(self._queue) >= self._max_backlog:
                 raise TaskQueueFullError(
                     f"Queue full ({self._max_backlog} tasks)"
@@ -78,18 +80,14 @@ class TaskQueue:
                 context_id=context_id,
             )
             heapq.heappush(self._queue, task)
-            self._not_empty.set()
+            self._cond.notify()
 
     async def dequeue(self) -> QueuedTask:
         """Pop highest priority task. Blocks until a task is available."""
-        while True:
-            async with self._lock:
-                if self._queue:
-                    task = heapq.heappop(self._queue)
-                    if not self._queue:
-                        self._not_empty.clear()
-                    return task
-            await self._not_empty.wait()
+        async with self._cond:
+            while not self._queue:
+                await self._cond.wait()
+            return heapq.heappop(self._queue)
 
     def size(self) -> int:
         """Current queue depth."""

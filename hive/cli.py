@@ -24,9 +24,10 @@ def cli():
 @click.option("--org-memory", default=None, help="Org memory git repo URL")
 @click.option("--port", default=8462, type=int, help="HTTP port")
 @click.option("--host", default="0.0.0.0", help="HTTP host")
+@click.option("--auth-token", default=None, help="Bearer token for authentication")
 @click.option("--config", default=None, type=click.Path(exists=True), help="Path to agent-config.yaml (overrides all other flags)")
 def join(role, name, reports_to, skills, tools, objectives, knowledge, report_frequency,
-         budget_daily, budget_weekly, initiative_interval, registry, org_memory, port, host, config):
+         budget_daily, budget_weekly, initiative_interval, registry, org_memory, port, host, auth_token, config):
     """Join the Hive network as an agent."""
 
     if config:
@@ -68,6 +69,7 @@ def join(role, name, reports_to, skills, tools, objectives, knowledge, report_fr
             org_memory_url=org_memory,
             host=host,
             port=port,
+            auth_token=auth_token,
         )
 
     click.echo(f"Joining Hive as '{agent_config.name}' ({agent_config.role})")
@@ -95,14 +97,15 @@ def leave(graceful):
 @cli.command(name="registry")
 @click.option("--port", default=8080, type=int, help="Registry port")
 @click.option("--host", default="0.0.0.0", help="Registry host")
-def start_registry(port, host):
+@click.option("--auth-token", default=None, help="Bearer token for authentication")
+def start_registry(port, host, auth_token):
     """Start the Hive registry server."""
     import uvicorn
 
     from hive.registry.server import create_registry_app
 
     click.echo(f"Starting Hive registry on {host}:{port}")
-    app = create_registry_app()
+    app = create_registry_app(auth_token=auth_token)
     uvicorn.run(app, host=host, port=port)
 
 

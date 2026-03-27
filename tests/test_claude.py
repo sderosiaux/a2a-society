@@ -134,6 +134,43 @@ async def test_invoke_claude_with_session():
 
 
 @pytest.mark.asyncio
+async def test_invoke_claude_default_permission_mode():
+    fake_result = _make_result_message()
+
+    async def fake_query(**kwargs):
+        opts = kwargs.get("options")
+        assert opts.permission_mode == "default"
+        yield fake_result
+
+    with patch("hive.claude.query", new=fake_query):
+        from hive.claude import invoke_claude
+
+        await invoke_claude(
+            prompt="Do it",
+            system_prompt="sys",
+        )
+
+
+@pytest.mark.asyncio
+async def test_invoke_claude_custom_permission_mode():
+    fake_result = _make_result_message()
+
+    async def fake_query(**kwargs):
+        opts = kwargs.get("options")
+        assert opts.permission_mode == "plan"
+        yield fake_result
+
+    with patch("hive.claude.query", new=fake_query):
+        from hive.claude import invoke_claude
+
+        await invoke_claude(
+            prompt="Do it",
+            system_prompt="sys",
+            permission_mode="plan",
+        )
+
+
+@pytest.mark.asyncio
 async def test_invoke_claude_with_budget():
     fake_result = _make_result_message()
 

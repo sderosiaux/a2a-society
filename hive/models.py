@@ -43,6 +43,8 @@ class AgentConfig(BaseModel):
     org_memory_url: str | None = None
     host: str = "0.0.0.0"
     port: int = 8462
+    auth_token: str | None = None
+    permission_mode: str = "default"
 
 
 class BudgetStatus(str, Enum):

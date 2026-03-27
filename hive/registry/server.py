@@ -4,14 +4,20 @@ import asyncio
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 
+from hive.auth import require_auth
 from hive.registry.store import RegistryStore
 
 
-def create_registry_app(heartbeat_interval: int = 60) -> FastAPI:
+def create_registry_app(
+    heartbeat_interval: int = 60,
+    auth_token: str | None = None,
+) -> FastAPI:
     """Create a standalone FastAPI registry service."""
     store = RegistryStore(heartbeat_interval=heartbeat_interval)
+    auth_dep = require_auth(auth_token)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -31,7 +37,7 @@ def create_registry_app(heartbeat_interval: int = 60) -> FastAPI:
     async def list_agents() -> list[dict[str, Any]]:
         return store.get_all()
 
-    @app.post("/agents/register")
+    @app.post("/agents/register", dependencies=[Depends(auth_dep)])
     async def register_agent(body: dict[str, Any]) -> dict[str, str]:
         store.register(body)
         return {"status": "ok"}

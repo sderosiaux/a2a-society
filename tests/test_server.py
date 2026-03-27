@@ -91,3 +91,127 @@ async def test_status_endpoint(client: AsyncClient):
     assert data["status"] == "active"
     assert "budget_remaining" in data
     assert "queue_depth" in data
+
+
+# -- Auth tests ---------------------------------------------------------------
+
+AUTH_TOKEN = "test-secret-token"
+
+
+@pytest.fixture()
+def auth_config() -> AgentConfig:
+    return AgentConfig(
+        name="auth-agent",
+        role="Tester",
+        description="Agent with auth",
+        skills=[SkillDef(id="echo", name="Echo skill")],
+        auth_token=AUTH_TOKEN,
+    )
+
+
+@pytest.fixture()
+def auth_app(auth_config: AgentConfig):
+    return create_app(auth_config, use_echo=True)
+
+
+@pytest_asyncio.fixture()
+async def auth_client(auth_app):
+    transport = ASGITransport(app=auth_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c
+
+
+@pytest.mark.asyncio
+async def test_auth_agent_card_public(auth_client: AsyncClient):
+    """Agent card endpoints remain public even with auth enabled."""
+    resp = await auth_client.get("/.well-known/agent.json")
+    assert resp.status_code == 200
+    assert resp.json()["name"] == "auth-agent"
+
+    resp = await auth_client.get("/.well-known/agent-card.json")
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_auth_status_rejected_without_token(auth_client: AsyncClient):
+    """GET /status without token returns 401."""
+    resp = await auth_client.get("/status")
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_auth_status_rejected_wrong_token(auth_client: AsyncClient):
+    """GET /status with wrong token returns 403."""
+    resp = await auth_client.get(
+        "/status", headers={"Authorization": "Bearer wrong-token"}
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_auth_status_accepted_with_token(auth_client: AsyncClient):
+    """GET /status with correct token returns 200."""
+    resp = await auth_client.get(
+        "/status", headers={"Authorization": f"Bearer {AUTH_TOKEN}"}
+    )
+    assert resp.status_code == 200
+    assert resp.json()["name"] == "auth-agent"
+
+
+@pytest.mark.asyncio
+async def test_auth_rpc_rejected_without_token(auth_client: AsyncClient):
+    """POST / (A2A RPC) without token returns 401."""
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "message/send",
+        "params": {
+            "message": {
+                "messageId": str(uuid.uuid4()),
+                "role": "user",
+                "parts": [{"kind": "text", "text": "hello"}],
+            }
+        },
+    }
+    resp = await auth_client.post("/", json=payload)
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_auth_rpc_accepted_with_token(auth_client: AsyncClient):
+    """POST / (A2A RPC) with correct token returns 200."""
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "message/send",
+        "params": {
+            "message": {
+                "messageId": str(uuid.uuid4()),
+                "role": "user",
+                "parts": [{"kind": "text", "text": "hello"}],
+            }
+        },
+    }
+    resp = await auth_client.post(
+        "/", json=payload, headers={"Authorization": f"Bearer {AUTH_TOKEN}"}
+    )
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_auth_callbacks_rejected_without_token(auth_client: AsyncClient):
+    """POST /callbacks without token returns 401."""
+    resp = await auth_client.post(
+        "/callbacks",
+        json={"task_id": "t1", "status": "completed", "result": {}, "from_agent": "x"},
+    )
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_no_auth_allows_all(client: AsyncClient):
+    """No auth_token configured -> all endpoints accessible without token."""
+    resp = await client.get("/status")
+    assert resp.status_code == 200
+    resp = await client.get("/.well-known/agent.json")
+    assert resp.status_code == 200

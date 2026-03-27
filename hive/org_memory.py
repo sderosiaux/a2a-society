@@ -21,6 +21,14 @@ class OrgMemory:
         self._agent_name = agent_name
         self._repo: git.Repo | None = None
 
+    def _safe_path(self, relative_path: str) -> str:
+        """Resolve path and verify it's within the repo root."""
+        full = os.path.normpath(os.path.join(self._local_path, relative_path))
+        root = os.path.normpath(self._local_path)
+        if not full.startswith(root + os.sep) and full != root:
+            raise ValueError(f"Path traversal blocked: {relative_path}")
+        return full
+
     @property
     def repo(self) -> git.Repo:
         if self._repo is None:
@@ -89,7 +97,7 @@ class OrgMemory:
 
     def read_file(self, relative_path: str) -> str | None:
         """Read a file from the repo. Returns None if not found."""
-        full = os.path.join(self._local_path, relative_path)
+        full = self._safe_path(relative_path)
         if not os.path.isfile(full):
             return None
         with open(full) as f:
@@ -101,7 +109,7 @@ class OrgMemory:
         Returns artifact_ref dict: {repo, path, commit, size_lines}
         """
         rel_path = os.path.join("artifacts", domain, filename)
-        full_path = os.path.join(self._local_path, rel_path)
+        full_path = self._safe_path(rel_path)
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
 
         with open(full_path, "w") as f:
@@ -132,7 +140,7 @@ class OrgMemory:
         filename = f"{time_part}-{self._agent_name}-{event_type}.yaml"
 
         rel_path = os.path.join("events", date_dir, filename)
-        full_path = os.path.join(self._local_path, rel_path)
+        full_path = self._safe_path(rel_path)
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
 
         event = {
@@ -155,7 +163,7 @@ class OrgMemory:
         now = datetime.now(timezone.utc)
         date_str = now.strftime("%Y-%m-%d")
         rel_path = os.path.join("budget-logs", self._agent_name, f"{date_str}.jsonl")
-        full_path = os.path.join(self._local_path, rel_path)
+        full_path = self._safe_path(rel_path)
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
 
         with open(full_path, "a") as f:
@@ -170,7 +178,7 @@ class OrgMemory:
         Commit and push on success.
         """
         rel_lock = os.path.join(".lock", f"{file_path}.lock")
-        full_lock = os.path.join(self._local_path, rel_lock)
+        full_lock = self._safe_path(rel_lock)
 
         if os.path.isfile(full_lock):
             with open(full_lock) as f:
@@ -208,7 +216,7 @@ class OrgMemory:
     def release_lock(self, file_path: str) -> None:
         """Remove the lock file, commit, push."""
         rel_lock = os.path.join(".lock", f"{file_path}.lock")
-        full_lock = os.path.join(self._local_path, rel_lock)
+        full_lock = self._safe_path(rel_lock)
 
         if os.path.isfile(full_lock):
             os.remove(full_lock)

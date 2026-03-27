@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
+from a2a.types import TaskState
 from a2a.utils import new_agent_text_message
 
 from hive.budget import BudgetManager
@@ -15,12 +17,35 @@ from hive.discovery import DiscoveryClient
 from hive.models import AgentConfig
 from hive.org_memory import OrgMemory
 from hive.prompt_builder import build_system_prompt
-from hive.queue import QueuedTask, TaskQueue
+from hive.queue import QueuedTask, TaskQueue, TaskQueueFullError
 from hive.subtask_tracker import SubtaskTracker
 
 ARTIFACT_LINE_THRESHOLD = 50
+DELEGATION_PATTERN = re.compile(
+    r'\{"delegate"\s*:\s*\{[^}]*"skill"\s*:\s*"[^"]*"[^}]*\}\}',
+    re.DOTALL,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def parse_delegation(text: str) -> dict | None:
+    """Extract a delegation intent from Claude's response.
+
+    Looks for: {"delegate": {"skill": "...", "message": "..."}}
+    Returns the inner dict {"skill": ..., "message": ...} or None.
+    """
+    match = DELEGATION_PATTERN.search(text)
+    if not match:
+        return None
+    try:
+        parsed = json.loads(match.group())
+        delegate = parsed.get("delegate", {})
+        if delegate.get("skill"):
+            return delegate
+    except (json.JSONDecodeError, AttributeError):
+        pass
+    return None
 
 
 class EchoExecutor(AgentExecutor):
@@ -58,17 +83,32 @@ class EchoExecutor(AgentExecutor):
 
 
 class ClaudeExecutor(AgentExecutor):
-    """Executor that delegates to Claude Code SDK with a role-based system prompt."""
+    """Executor that routes tasks through the priority queue and delegates to Claude.
+
+    When a TaskQueue is attached, tasks are enqueued and processed by the
+    background TaskWorker in priority order.  When no queue is attached (e.g.
+    in tests), tasks are executed inline as before.
+    """
 
     def __init__(
         self,
         config: AgentConfig,
         budget_manager: BudgetManager | None = None,
         org_memory: OrgMemory | None = None,
+        task_queue: TaskQueue | None = None,
+        discovery: DiscoveryClient | None = None,
+        subtask_tracker: SubtaskTracker | None = None,
+        a2a_client: A2AClient | None = None,
     ) -> None:
         self.config = config
         self.budget = budget_manager
         self.org_memory = org_memory
+        self.task_queue = task_queue
+        self.discovery = discovery
+        self.subtask_tracker = subtask_tracker
+        self.a2a_client = a2a_client
+        # Map of task_id -> Future for queue-based execution signaling
+        self._pending_futures: dict[str, asyncio.Future] = {}
 
     @staticmethod
     def _slugify_role(role: str) -> str:
@@ -98,6 +138,59 @@ class ClaudeExecutor(AgentExecutor):
     async def execute(
         self, context: RequestContext, event_queue: EventQueue
     ) -> None:
+        """Route the task through the priority queue if available.
+
+        If queue is full, reject the task immediately.
+        If queue is available, enqueue and wait for the worker to process.
+        If no queue, execute inline (backward compat / tests).
+        """
+        task_id = context.task_id
+        context_id = context.context_id
+        updater = TaskUpdater(event_queue, task_id, context_id)
+
+        if self.task_queue is not None:
+            # Extract metadata from the incoming message
+            msg = context.message
+            metadata = dict(msg.metadata) if msg and msg.metadata else {}
+            text = context.get_user_input()
+
+            # Try to enqueue
+            try:
+                await self.task_queue.enqueue(
+                    task_id=task_id,
+                    message_text=text,
+                    metadata=metadata,
+                    context_id=context_id,
+                )
+            except TaskQueueFullError:
+                response = new_agent_text_message(
+                    "At capacity — queue full. Task rejected.",
+                    context_id,
+                    task_id,
+                )
+                await updater.failed(response)
+                return
+
+            # Create a future for the worker to signal completion
+            loop = asyncio.get_running_loop()
+            future: asyncio.Future = loop.create_future()
+            self._pending_futures[task_id] = future
+
+            # Wait for the worker to process and provide context + event_queue
+            # Store context/event_queue so the worker can use them
+            future.context = context  # type: ignore[attr-defined]
+            future.event_queue = event_queue  # type: ignore[attr-defined]
+
+            await future  # blocks until worker resolves it
+            self._pending_futures.pop(task_id, None)
+        else:
+            # No queue: execute inline (tests, simple setups)
+            await self._execute_task(context, event_queue)
+
+    async def _execute_task(
+        self, context: RequestContext, event_queue: EventQueue
+    ) -> None:
+        """Core execution logic: call Claude, handle delegation, complete task."""
         from hive.claude import invoke_claude
 
         task_id = context.task_id
@@ -148,6 +241,7 @@ class ClaudeExecutor(AgentExecutor):
             system_prompt=system_prompt,
             allowed_tools=self.config.tools or None,
             max_budget_usd=max_budget,
+            permission_mode=self.config.permission_mode,
         )
 
         # Record cost
@@ -158,6 +252,44 @@ class ClaudeExecutor(AgentExecutor):
                 logger.info(
                     "Budget status changed: %s -> %s", prev_status.value, new_status.value
                 )
+
+        # --- C5: Check for delegation intent ---
+        delegation = parse_delegation(response_text)
+        if delegation and self.discovery and self.a2a_client and self.subtask_tracker:
+            skill = delegation["skill"]
+            del_message = delegation.get("message", text)
+            callback_url = f"http://{self.config.host}:{self.config.port}/callbacks"
+
+            subtask_id = await delegate_to_peer(
+                client=self.a2a_client,
+                discovery=self.discovery,
+                subtask_tracker=self.subtask_tracker,
+                parent_task_id=task_id,
+                skill_needed=skill,
+                message_text=del_message,
+                from_agent=self.config.name,
+                callback_url=callback_url,
+            )
+            if subtask_id:
+                # Task is now waiting for subtask completion
+                working_msg = new_agent_text_message(
+                    "Delegated to peer, awaiting response.",
+                    context_id,
+                    task_id,
+                )
+                await updater.update_status(TaskState.working, working_msg)
+                # Log delegation event
+                if self.org_memory:
+                    try:
+                        self.org_memory.append_event(
+                            "task_delegated",
+                            {"task_id": task_id, "subtask_id": subtask_id, "skill": skill},
+                        )
+                    except Exception:
+                        logger.warning("Failed to log delegation event for %s", task_id)
+                return
+            # If no peer found, fall through to normal completion
+            logger.info("No peer for skill %s, completing task normally", skill)
 
         # --- Outbound: commit large responses as artifacts ---
         response_artifact_ref = None
@@ -213,17 +345,29 @@ def create_executor(
     use_echo: bool = False,
     budget_manager: BudgetManager | None = None,
     org_memory: OrgMemory | None = None,
+    task_queue: TaskQueue | None = None,
+    discovery: DiscoveryClient | None = None,
+    subtask_tracker: SubtaskTracker | None = None,
+    a2a_client: A2AClient | None = None,
 ) -> AgentExecutor:
     """Factory: returns EchoExecutor for tests, ClaudeExecutor for production."""
     if use_echo:
         return EchoExecutor(config.name)
-    return ClaudeExecutor(config, budget_manager=budget_manager, org_memory=org_memory)
+    return ClaudeExecutor(
+        config,
+        budget_manager=budget_manager,
+        org_memory=org_memory,
+        task_queue=task_queue,
+        discovery=discovery,
+        subtask_tracker=subtask_tracker,
+        a2a_client=a2a_client,
+    )
 
 
 class TaskWorker:
-    """Background worker that processes tasks from the queue one at a time."""
+    """Background worker that dequeues tasks and processes them via the executor."""
 
-    def __init__(self, queue: TaskQueue, executor: AgentExecutor) -> None:
+    def __init__(self, queue: TaskQueue, executor: ClaudeExecutor) -> None:
         self._queue = queue
         self._executor = executor
         self._running = False
@@ -243,13 +387,28 @@ class TaskWorker:
                 logger.exception(
                     "Worker failed processing task %s", queued.task_id
                 )
+                # Resolve the pending future with an error so the
+                # execute() caller doesn't hang forever
+                future = self._executor._pending_futures.get(queued.task_id)
+                if future and not future.done():
+                    future.set_result(None)
 
     async def _process(self, queued: QueuedTask) -> None:
         logger.info(
             "Processing task %s (priority=%s)", queued.task_id, queued.priority
         )
-        # Future: create RequestContext + EventQueue and call executor.execute()
-        # For now, log that the task was dequeued for processing.
+        future = self._executor._pending_futures.get(queued.task_id)
+        if future is not None:
+            # Execute using the stored context/event_queue from the future
+            context = future.context  # type: ignore[attr-defined]
+            event_queue = future.event_queue  # type: ignore[attr-defined]
+            try:
+                await self._executor._execute_task(context, event_queue)
+            finally:
+                if not future.done():
+                    future.set_result(None)
+        else:
+            logger.warning("No pending future for task %s, skipping", queued.task_id)
 
     async def stop(self) -> None:
         self._running = False

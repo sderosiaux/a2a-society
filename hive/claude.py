@@ -10,6 +10,7 @@ async def invoke_claude(
     max_budget_usd: float | None = None,
     cwd: str | None = None,
     session_id: str | None = None,
+    permission_mode: str = "default",
 ) -> tuple[str, float, str | None]:
     """Call Claude Code SDK.
 
@@ -17,7 +18,7 @@ async def invoke_claude(
     """
     options = ClaudeAgentOptions(
         system_prompt=system_prompt,
-        permission_mode="bypassPermissions",
+        permission_mode=permission_mode,
         max_turns=25,
     )
 
