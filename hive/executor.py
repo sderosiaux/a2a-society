@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
@@ -12,9 +13,12 @@ from hive.budget import BudgetManager
 from hive.client import A2AClient
 from hive.discovery import DiscoveryClient
 from hive.models import AgentConfig
+from hive.org_memory import OrgMemory
 from hive.prompt_builder import build_system_prompt
 from hive.queue import QueuedTask, TaskQueue
 from hive.subtask_tracker import SubtaskTracker
+
+ARTIFACT_LINE_THRESHOLD = 50
 
 logger = logging.getLogger(__name__)
 
@@ -60,9 +64,36 @@ class ClaudeExecutor(AgentExecutor):
         self,
         config: AgentConfig,
         budget_manager: BudgetManager | None = None,
+        org_memory: OrgMemory | None = None,
     ) -> None:
         self.config = config
         self.budget = budget_manager
+        self.org_memory = org_memory
+
+    @staticmethod
+    def _slugify_role(role: str) -> str:
+        """Convert role to a slug for artifact domain: 'SEO Specialist' -> 'seo'."""
+        slug = re.sub(r"[^a-z0-9]+", "-", role.lower()).strip("-")
+        # Use first word only for brevity
+        return slug.split("-")[0] if slug else "general"
+
+    def _extract_artifact_ref(self, context: RequestContext) -> dict | None:
+        """Extract artifact_ref from incoming message metadata, if present."""
+        msg = context.message
+        if msg and msg.metadata and "artifact_ref" in msg.metadata:
+            return msg.metadata["artifact_ref"]
+        return None
+
+    def _resolve_inbound_artifact(self, artifact_ref: dict) -> str | None:
+        """Pull org_memory and read the referenced artifact file."""
+        if not self.org_memory:
+            return None
+        try:
+            self.org_memory.pull()
+            return self.org_memory.read_file(artifact_ref["path"])
+        except Exception:
+            logger.warning("Failed to read artifact %s", artifact_ref.get("path"))
+            return None
 
     async def execute(
         self, context: RequestContext, event_queue: EventQueue
@@ -89,6 +120,27 @@ class ClaudeExecutor(AgentExecutor):
             max_budget = min(budget_cfg.per_task_max_usd, budget_cfg.daily_max_usd)
 
         text = context.get_user_input()
+
+        # --- Inbound: resolve artifact_ref if present ---
+        artifact_ref = self._extract_artifact_ref(context)
+        if artifact_ref and self.org_memory:
+            content = self._resolve_inbound_artifact(artifact_ref)
+            if content:
+                text = f"Referenced artifact:\n{content}\n\nTask: {text}"
+
+        # Log task_received event
+        if self.org_memory:
+            try:
+                msg = context.message
+                from_agent = (msg.metadata or {}).get("from_agent", "unknown") if msg else "unknown"
+                summary = text[:120]
+                self.org_memory.append_event(
+                    "task_received",
+                    {"task_id": task_id, "from_agent": from_agent, "summary": summary},
+                )
+            except Exception:
+                logger.warning("Failed to log task_received event for %s", task_id)
+
         system_prompt = build_system_prompt(self.config)
 
         response_text, cost_usd, _session_id = await invoke_claude(
@@ -107,11 +159,42 @@ class ClaudeExecutor(AgentExecutor):
                     "Budget status changed: %s -> %s", prev_status.value, new_status.value
                 )
 
+        # --- Outbound: commit large responses as artifacts ---
+        response_artifact_ref = None
+        line_count = response_text.count("\n") + (1 if response_text and not response_text.endswith("\n") else 0)
+        if line_count > ARTIFACT_LINE_THRESHOLD and self.org_memory:
+            try:
+                domain = self._slugify_role(self.config.role)
+                filename = f"{task_id}-response.md"
+                response_artifact_ref = self.org_memory.write_artifact(domain, filename, response_text)
+                first_lines = "\n".join(response_text.split("\n")[:3])
+                path = response_artifact_ref["path"]
+                response_text = f"{first_lines}\n... (full report: {path}, {line_count} lines)"
+            except Exception:
+                logger.warning("Failed to commit artifact for task %s", task_id)
+
+        # Log task_completed event
+        if self.org_memory:
+            try:
+                summary = response_text[:120]
+                self.org_memory.append_event(
+                    "task_completed",
+                    {"task_id": task_id, "cost_usd": cost_usd, "summary": summary},
+                )
+            except Exception:
+                logger.warning("Failed to log task_completed event for %s", task_id)
+
         response = new_agent_text_message(
             response_text,
             context_id,
             task_id,
         )
+        # Attach artifact_ref to response metadata if available
+        if response_artifact_ref and hasattr(response, "metadata"):
+            if response.metadata is None:
+                response.metadata = {}
+            response.metadata["artifact_ref"] = response_artifact_ref
+
         await updater.complete(response)
 
     async def cancel(
@@ -129,11 +212,12 @@ def create_executor(
     *,
     use_echo: bool = False,
     budget_manager: BudgetManager | None = None,
+    org_memory: OrgMemory | None = None,
 ) -> AgentExecutor:
     """Factory: returns EchoExecutor for tests, ClaudeExecutor for production."""
     if use_echo:
         return EchoExecutor(config.name)
-    return ClaudeExecutor(config, budget_manager=budget_manager)
+    return ClaudeExecutor(config, budget_manager=budget_manager, org_memory=org_memory)
 
 
 class TaskWorker:

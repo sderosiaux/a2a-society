@@ -31,6 +31,7 @@ class A2AClient:
         from_agent: str,
         priority: str = "normal",
         callback_url: str | None = None,
+        artifact_ref: dict | None = None,
     ) -> dict:
         """
         Send an A2A task to a peer agent.
@@ -40,6 +41,14 @@ class A2AClient:
         Returns: dict with task_id, status, and full response
         Raises: A2AClientError on rejection or connection failure
         """
+        metadata: dict = {
+            "from_agent": from_agent,
+            "priority": priority,
+            "callback_url": callback_url,
+        }
+        if artifact_ref is not None:
+            metadata["artifact_ref"] = artifact_ref
+
         payload = {
             "jsonrpc": "2.0",
             "method": "message/send",
@@ -48,11 +57,7 @@ class A2AClient:
                 "message": {
                     "role": "user",
                     "parts": [{"kind": "text", "text": message_text}],
-                    "metadata": {
-                        "from_agent": from_agent,
-                        "priority": priority,
-                        "callback_url": callback_url,
-                    },
+                    "metadata": metadata,
                 }
             },
         }
