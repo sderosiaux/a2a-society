@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from a2a.server.apps.jsonrpc.fastapi_app import A2AFastAPIApplication
@@ -17,6 +17,7 @@ from a2a.types import AgentCapabilities, AgentCard, AgentSkill
 from hive.discovery import DiscoveryClient
 from hive.executor import create_executor
 from hive.models import AgentConfig
+from hive.subtask_tracker import SubtaskTracker
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +84,7 @@ def create_app(config: AgentConfig, *, use_echo: bool = False) -> FastAPI:
         registry_url=config.registry_url,
         peers=[{"url": p.url} for p in config.peers],
     )
+    subtask_tracker = SubtaskTracker()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -94,6 +96,7 @@ def create_app(config: AgentConfig, *, use_echo: bool = False) -> FastAPI:
         if config.peers:
             await discovery.fetch_peer_cards()
         app.state.discovery = discovery  # type: ignore[attr-defined]
+        app.state.subtask_tracker = subtask_tracker  # type: ignore[attr-defined]
         yield
         # Shutdown
         await discovery.stop_heartbeat()
@@ -101,6 +104,9 @@ def create_app(config: AgentConfig, *, use_echo: bool = False) -> FastAPI:
 
     a2a_app = A2AFastAPIApplication(agent_card, handler)
     app = a2a_app.build(lifespan=lifespan)
+
+    # Eagerly set on state so it's available even without lifespan (tests)
+    app.state.subtask_tracker = subtask_tracker  # type: ignore[attr-defined]
 
     budget_remaining = config.budget.daily_max_usd
 
@@ -115,6 +121,45 @@ def create_app(config: AgentConfig, *, use_echo: bool = False) -> FastAPI:
                 "queue_depth": 0,
             }
         )
+
+    @app.post("/callbacks")
+    async def handle_callback(request: Request) -> JSONResponse:
+        """Receive push notification from a peer when a delegated subtask completes.
+
+        Expected body:
+        {
+            "task_id": "...",
+            "status": "completed" | "failed" | "rejected",
+            "result": { "text": "...", "artifact_ref": {...} },
+            "from_agent": "..."
+        }
+        """
+        body = await request.json()
+        task_id = body.get("task_id")
+        cb_status = body.get("status", "completed")
+        result = body.get("result")
+        from_agent = body.get("from_agent", "unknown")
+
+        if not task_id:
+            return JSONResponse({"error": "missing task_id"}, status_code=400)
+
+        tracker: SubtaskTracker = request.app.state.subtask_tracker
+
+        if cb_status == "completed":
+            parent_id = tracker.complete_subtask(task_id, result)
+        else:
+            reason = (result or {}).get("reason", cb_status)
+            parent_id = tracker.fail_subtask(task_id, reason)
+
+        if parent_id:
+            logger.info(
+                "All subtasks resolved for parent %s (callback from %s)",
+                parent_id,
+                from_agent,
+            )
+            # TODO: re-queue parent task for synthesis (Task 4.1)
+
+        return JSONResponse({"ok": True, "parent_ready": parent_id is not None})
 
     return app
 

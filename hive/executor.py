@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+import logging
+
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.utils import new_agent_text_message
 
+from hive.client import A2AClient
+from hive.discovery import DiscoveryClient
 from hive.models import AgentConfig
 from hive.prompt_builder import build_system_prompt
+from hive.subtask_tracker import SubtaskTracker
+
+logger = logging.getLogger(__name__)
 
 
 class EchoExecutor(AgentExecutor):
@@ -93,3 +100,45 @@ def create_executor(config: AgentConfig, *, use_echo: bool = False) -> AgentExec
     if use_echo:
         return EchoExecutor(config.name)
     return ClaudeExecutor(config)
+
+
+async def delegate_to_peer(
+    client: A2AClient,
+    discovery: DiscoveryClient,
+    subtask_tracker: SubtaskTracker,
+    parent_task_id: str,
+    skill_needed: str,
+    message_text: str,
+    from_agent: str,
+    callback_url: str,
+) -> str | None:
+    """Find a peer with the needed skill and send them a task.
+
+    Returns subtask_id on success, None if no peer found.
+    """
+    peers = await discovery.discover_by_skill(skill_needed)
+    if not peers:
+        logger.info("No peer found for skill %s", skill_needed)
+        return None
+
+    peer = peers[0]  # simple: pick first available
+    result = await client.send_task(
+        peer_url=peer["url"],
+        message_text=message_text,
+        from_agent=from_agent,
+        callback_url=callback_url,
+    )
+
+    subtask_id = result["task_id"]
+    subtask_tracker.register_subtask(
+        parent_task_id=parent_task_id,
+        subtask_id=subtask_id,
+        peer_name=peer["name"],
+    )
+    logger.info(
+        "Delegated subtask %s to %s for parent %s",
+        subtask_id,
+        peer["name"],
+        parent_task_id,
+    )
+    return subtask_id
