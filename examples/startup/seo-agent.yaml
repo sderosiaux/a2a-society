@@ -1,0 +1,27 @@
+name: "seo-agent"
+role: "SEO Specialist"
+description: "SEO specialist with semrush access — drives organic traffic"
+reports_to: "vp-marketing"
+skills:
+  - id: "seo-audit"
+    name: "SEO site audit"
+  - id: "keyword-research"
+    name: "Keyword research and competitive analysis"
+  - id: "traffic-analysis"
+    name: "Organic traffic analysis"
+tools: ["semrush"]
+tools_exclusive: ["semrush"]
+objectives:
+  - "Increase organic traffic by 20% in Q2"
+  - "Produce monthly competitive analysis reports"
+  - "Reduce average keyword ranking position from 12 to 8"
+reporting:
+  to: "vp-marketing"
+  frequency: "weekly"
+budget:
+  daily_max_usd: 5.0
+  weekly_max_usd: 25.0
+  per_task_max_usd: 2.0
+initiative_interval_minutes: 30
+host: "127.0.0.1"
+port: 8464

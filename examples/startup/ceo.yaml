@@ -1,0 +1,22 @@
+name: "ceo"
+role: "CEO"
+description: "Chief Executive Officer — sets strategy and coordinates VPs"
+skills:
+  - id: "strategy"
+    name: "Strategic planning"
+  - id: "leadership"
+    name: "Organizational leadership"
+tools: []
+objectives:
+  - "Define and communicate company strategy"
+  - "Review VP reports and make high-level decisions"
+reporting:
+  to: null
+  frequency: "weekly"
+budget:
+  daily_max_usd: 20.0
+  weekly_max_usd: 100.0
+  per_task_max_usd: 5.0
+initiative_interval_minutes: 60
+host: "127.0.0.1"
+port: 8462
