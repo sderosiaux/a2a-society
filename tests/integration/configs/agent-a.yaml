@@ -1,0 +1,14 @@
+name: "vp-marketing"
+role: "VP Marketing"
+description: "Marketing leader"
+reports_to: "ceo"
+skills:
+  - id: "marketing-strategy"
+    name: "Marketing strategy"
+tools: []
+objectives:
+  - "Grow brand awareness"
+budget:
+  daily_max_usd: 10.0
+host: "127.0.0.1"
+port: 8462
