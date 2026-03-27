@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "hive"
+name = "a2a-society"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.scripts]
-hive = "hive.cli:cli"
+a2a-society = "a2a-society.cli:cli"
 
 [project.optional-dependencies]
 dev = [

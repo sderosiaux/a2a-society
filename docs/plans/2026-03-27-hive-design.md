@@ -560,4 +560,4 @@ $ hive leave --graceful
 
 ## Naming
 
-Working name: **Hive**. Open to change.
+Name: **a2a-society**
