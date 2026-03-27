@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.pytest_cache/
+.hive_report_state.json
+.venv/
+venv/
