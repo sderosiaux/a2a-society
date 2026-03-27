@@ -10,7 +10,7 @@ from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore
 from a2a.types import AgentCapabilities, AgentCard, AgentSkill
 
-from hive.executor import EchoExecutor
+from hive.executor import create_executor
 from hive.models import AgentConfig
 
 
@@ -37,10 +37,10 @@ def _build_agent_card(config: AgentConfig) -> AgentCard:
     )
 
 
-def create_app(config: AgentConfig) -> FastAPI:
+def create_app(config: AgentConfig, *, use_echo: bool = False) -> FastAPI:
     """Build and return the FastAPI A2A application for the given agent config."""
     agent_card = _build_agent_card(config)
-    executor = EchoExecutor(config.name)
+    executor = create_executor(config, use_echo=use_echo)
     task_store = InMemoryTaskStore()
     queue_manager = InMemoryQueueManager()
     handler = DefaultRequestHandler(

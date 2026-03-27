@@ -25,7 +25,7 @@ def config() -> AgentConfig:
 
 @pytest.fixture()
 def app(config: AgentConfig):
-    return create_app(config)
+    return create_app(config, use_echo=True)
 
 
 @pytest_asyncio.fixture()
