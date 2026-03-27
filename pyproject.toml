@@ -8,6 +8,8 @@ version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
     "a2a-sdk",
+    "fastapi",
+    "uvicorn",
     "pydantic>=2.0",
     "click",
     "gitpython",
@@ -17,5 +19,6 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest",
+    "pytest-asyncio",
     "httpx",
 ]
