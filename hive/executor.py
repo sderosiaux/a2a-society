@@ -8,6 +8,7 @@ from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.utils import new_agent_text_message
 
+from hive.budget import BudgetManager
 from hive.client import A2AClient
 from hive.discovery import DiscoveryClient
 from hive.models import AgentConfig
@@ -55,8 +56,13 @@ class EchoExecutor(AgentExecutor):
 class ClaudeExecutor(AgentExecutor):
     """Executor that delegates to Claude Code SDK with a role-based system prompt."""
 
-    def __init__(self, config: AgentConfig) -> None:
+    def __init__(
+        self,
+        config: AgentConfig,
+        budget_manager: BudgetManager | None = None,
+    ) -> None:
         self.config = config
+        self.budget = budget_manager
 
     async def execute(
         self, context: RequestContext, event_queue: EventQueue
@@ -67,18 +73,39 @@ class ClaudeExecutor(AgentExecutor):
         context_id = context.context_id
         updater = TaskUpdater(event_queue, task_id, context_id)
 
+        # Budget guard
+        if self.budget:
+            allowed, max_budget = self.budget.check_before_execution()
+            if not allowed:
+                response = new_agent_text_message(
+                    "On vacation — budget exhausted. Task rejected.",
+                    context_id,
+                    task_id,
+                )
+                await updater.complete(response)
+                return
+        else:
+            budget_cfg = self.config.budget
+            max_budget = min(budget_cfg.per_task_max_usd, budget_cfg.daily_max_usd)
+
         text = context.get_user_input()
         system_prompt = build_system_prompt(self.config)
 
-        budget = self.config.budget
-        max_budget = min(budget.per_task_max_usd, budget.daily_max_usd)
-
-        response_text, _cost, _session_id = await invoke_claude(
+        response_text, cost_usd, _session_id = await invoke_claude(
             prompt=text,
             system_prompt=system_prompt,
             allowed_tools=self.config.tools or None,
             max_budget_usd=max_budget,
         )
+
+        # Record cost
+        if self.budget:
+            prev_status = self.budget.status
+            new_status = self.budget.record_cost(cost_usd)
+            if new_status != prev_status:
+                logger.info(
+                    "Budget status changed: %s -> %s", prev_status.value, new_status.value
+                )
 
         response = new_agent_text_message(
             response_text,
@@ -97,11 +124,16 @@ class ClaudeExecutor(AgentExecutor):
             await updater.cancel()
 
 
-def create_executor(config: AgentConfig, *, use_echo: bool = False) -> AgentExecutor:
+def create_executor(
+    config: AgentConfig,
+    *,
+    use_echo: bool = False,
+    budget_manager: BudgetManager | None = None,
+) -> AgentExecutor:
     """Factory: returns EchoExecutor for tests, ClaudeExecutor for production."""
     if use_echo:
         return EchoExecutor(config.name)
-    return ClaudeExecutor(config)
+    return ClaudeExecutor(config, budget_manager=budget_manager)
 
 
 class TaskWorker:

@@ -14,6 +14,7 @@ from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore
 from a2a.types import AgentCapabilities, AgentCard, AgentSkill
 
+from hive.budget import BudgetManager
 from hive.discovery import DiscoveryClient
 from hive.executor import create_executor
 from hive.models import AgentConfig
@@ -71,7 +72,8 @@ def create_app(config: AgentConfig, *, use_echo: bool = False) -> FastAPI:
     """Build and return the FastAPI A2A application for the given agent config."""
     agent_card = _build_agent_card(config)
     reg_card = _build_registration_card(config)
-    executor = create_executor(config, use_echo=use_echo)
+    budget_mgr = BudgetManager(config.budget)
+    executor = create_executor(config, use_echo=use_echo, budget_manager=budget_mgr)
     task_store = InMemoryTaskStore()
     queue_manager = InMemoryQueueManager()
     handler = DefaultRequestHandler(
@@ -107,8 +109,7 @@ def create_app(config: AgentConfig, *, use_echo: bool = False) -> FastAPI:
 
     # Eagerly set on state so it's available even without lifespan (tests)
     app.state.subtask_tracker = subtask_tracker  # type: ignore[attr-defined]
-
-    budget_remaining = config.budget.daily_max_usd
+    app.state.budget = budget_mgr  # type: ignore[attr-defined]
 
     @app.get("/status")
     async def status() -> JSONResponse:
@@ -116,8 +117,8 @@ def create_app(config: AgentConfig, *, use_echo: bool = False) -> FastAPI:
             {
                 "name": config.name,
                 "role": config.role,
-                "status": "active",
-                "budget_remaining": budget_remaining,
+                "status": budget_mgr.status.value,
+                "budget_remaining": budget_mgr.remaining_today,
                 "queue_depth": 0,
             }
         )
