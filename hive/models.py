@@ -41,10 +41,11 @@ class AgentConfig(BaseModel):
     peers: list[PeerConfig] = []
     registry_url: str | None = None
     org_memory_url: str | None = None
-    host: str = "0.0.0.0"
+    host: str = "127.0.0.1"
     port: int = 8462
     auth_token: str | None = None
     permission_mode: str = "default"
+    max_turns: int = 25
 
 
 class BudgetStatus(str, Enum):

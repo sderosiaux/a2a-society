@@ -5,6 +5,17 @@ import json
 import logging
 import re
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Awaitable, Callable
+
+from hive.budget import BudgetManager
+from hive.client import A2AClient
+from hive.discovery import DiscoveryClient
+from hive.models import AgentConfig
+from hive.org_memory import OrgMemory
+from hive.queue import TaskQueue
+
+if TYPE_CHECKING:
+    from hive.reporting import ReportGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -14,14 +25,14 @@ class InitiativeLoop:
 
     def __init__(
         self,
-        config,           # AgentConfig
-        claude_fn,        # async callable: (prompt, system_prompt) -> (text, cost, session_id)
-        org_memory=None,  # OrgMemory | None
-        client=None,      # A2AClient | None
-        discovery=None,   # DiscoveryClient | None
-        budget=None,      # BudgetManager | None
-        queue=None,       # TaskQueue | None
-        report_generator=None,  # ReportGenerator | None
+        config: AgentConfig,
+        claude_fn: Callable[..., Awaitable[tuple[str, float, str | None]]],
+        org_memory: OrgMemory | None = None,
+        client: A2AClient | None = None,
+        discovery: DiscoveryClient | None = None,
+        budget: BudgetManager | None = None,
+        queue: TaskQueue | None = None,
+        report_generator: ReportGenerator | None = None,
     ):
         self._config = config
         self._claude_fn = claude_fn

@@ -4,6 +4,12 @@ import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Awaitable, Callable
+
+from hive.client import A2AClient
+from hive.discovery import DiscoveryClient
+from hive.models import AgentConfig
+from hive.org_memory import OrgMemory
 
 logger = logging.getLogger(__name__)
 
@@ -13,11 +19,11 @@ class ReportGenerator:
 
     def __init__(
         self,
-        config,           # AgentConfig
-        claude_fn,        # async callable: (prompt, system_prompt) -> (text, cost, session_id)
-        org_memory=None,  # OrgMemory | None
-        client=None,      # A2AClient | None
-        discovery=None,   # DiscoveryClient | None
+        config: AgentConfig,
+        claude_fn: Callable[..., Awaitable[tuple[str, float, str | None]]],
+        org_memory: OrgMemory | None = None,
+        client: A2AClient | None = None,
+        discovery: DiscoveryClient | None = None,
         state_file: str = ".hive_report_state.json",
     ):
         self._config = config

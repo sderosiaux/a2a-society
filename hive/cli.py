@@ -23,7 +23,7 @@ def cli():
 @click.option("--registry", default=None, help="Registry URL")
 @click.option("--org-memory", default=None, help="Org memory git repo URL")
 @click.option("--port", default=8462, type=int, help="HTTP port")
-@click.option("--host", default="0.0.0.0", help="HTTP host")
+@click.option("--host", default="127.0.0.1", help="HTTP host")
 @click.option("--auth-token", default=None, help="Bearer token for authentication")
 @click.option("--config", default=None, type=click.Path(exists=True), help="Path to agent-config.yaml (overrides all other flags)")
 def join(role, name, reports_to, skills, tools, objectives, knowledge, report_frequency,
@@ -96,7 +96,7 @@ def leave(graceful):
 
 @cli.command(name="registry")
 @click.option("--port", default=8080, type=int, help="Registry port")
-@click.option("--host", default="0.0.0.0", help="Registry host")
+@click.option("--host", default="127.0.0.1", help="Registry host")
 @click.option("--auth-token", default=None, help="Bearer token for authentication")
 def start_registry(port, host, auth_token):
     """Start the Hive registry server."""

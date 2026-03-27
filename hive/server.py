@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, Literal
 
 import uvicorn
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 from a2a.server.apps.jsonrpc.fastapi_app import A2AFastAPIApplication
 from a2a.server.events import InMemoryQueueManager
@@ -25,6 +26,13 @@ from hive.queue import TaskPriority, TaskQueue
 from hive.subtask_tracker import SubtaskTracker
 
 logger = logging.getLogger(__name__)
+
+
+class CallbackRequest(BaseModel):
+    task_id: str
+    status: Literal["completed", "failed", "rejected"] = "completed"
+    result: dict | None = None
+    from_agent: str | None = None
 
 
 def _build_agent_card(config: AgentConfig) -> AgentCard:
@@ -51,25 +59,31 @@ def _build_agent_card(config: AgentConfig) -> AgentCard:
 
 
 def _build_registration_card(config: AgentConfig) -> dict[str, Any]:
-    """Build the JSON dict to POST to the registry."""
-    return {
-        "name": config.name,
-        "description": config.description or config.role,
-        "url": f"http://{config.host}:{config.port}",
-        "skills": [{"id": s.id, "name": s.name} for s in config.skills],
-        "hive": {
-            "role": config.role,
-            "reports_to": config.reports_to,
-            "tools_exclusive": config.tools_exclusive,
-            "objectives": config.objectives,
-            "status": "active",
-            "budget": {
-                "remaining_today_usd": config.budget.daily_max_usd,
-                "daily_max": config.budget.daily_max_usd,
-                "weekly_max": config.budget.weekly_max_usd,
-            },
+    """Build the JSON dict to POST to the registry.
+
+    Derives base fields from _build_agent_card() to stay in sync,
+    then layers hive-specific extensions on top.
+    """
+    card = _build_agent_card(config)
+    base: dict[str, Any] = {
+        "name": card.name,
+        "description": card.description,
+        "url": card.url,
+        "skills": [{"id": s.id, "name": s.name} for s in card.skills],
+    }
+    base["hive"] = {
+        "role": config.role,
+        "reports_to": config.reports_to,
+        "tools_exclusive": config.tools_exclusive,
+        "objectives": config.objectives,
+        "status": "active",
+        "budget": {
+            "remaining_today_usd": config.budget.daily_max_usd,
+            "daily_max": config.budget.daily_max_usd,
+            "weekly_max": config.budget.weekly_max_usd,
         },
     }
+    return base
 
 
 _PUBLIC_PATHS = {
@@ -202,25 +216,12 @@ def create_app(config: AgentConfig, *, use_echo: bool = False) -> FastAPI:
         )
 
     @app.post("/callbacks")
-    async def handle_callback(request: Request) -> JSONResponse:
-        """Receive push notification from a peer when a delegated subtask completes.
-
-        Expected body:
-        {
-            "task_id": "...",
-            "status": "completed" | "failed" | "rejected",
-            "result": { "text": "...", "artifact_ref": {...} },
-            "from_agent": "..."
-        }
-        """
-        body = await request.json()
-        task_id = body.get("task_id")
-        cb_status = body.get("status", "completed")
-        result = body.get("result")
-        from_agent = body.get("from_agent", "unknown")
-
-        if not task_id:
-            return JSONResponse({"error": "missing task_id"}, status_code=400)
+    async def handle_callback(request: Request, body: CallbackRequest) -> JSONResponse:
+        """Receive push notification from a peer when a delegated subtask completes."""
+        task_id = body.task_id
+        cb_status = body.status
+        result = body.result
+        from_agent = body.from_agent or "unknown"
 
         tracker: SubtaskTracker = request.app.state.subtask_tracker
 

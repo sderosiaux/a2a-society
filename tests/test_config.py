@@ -49,7 +49,7 @@ def test_load_full_config(tmp_yaml):
         peers: []
         registry_url: null
         org_memory_url: null
-        host: "0.0.0.0"
+        host: "127.0.0.1"
         port: 8462
     """)
     cfg = load_config(path)
@@ -110,5 +110,5 @@ def test_minimal_config(tmp_yaml):
     assert cfg.peers == []
     assert cfg.registry_url is None
     assert cfg.org_memory_url is None
-    assert cfg.host == "0.0.0.0"
+    assert cfg.host == "127.0.0.1"
     assert cfg.port == 8462

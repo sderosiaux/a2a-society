@@ -176,13 +176,12 @@ async def test_callback_failed(client: AsyncClient, app):
 
 @pytest.mark.asyncio
 async def test_callback_missing_task_id(client: AsyncClient):
-    """POST /callbacks without task_id -> 400."""
+    """POST /callbacks without task_id -> 422 (Pydantic validation)."""
     resp = await client.post(
         "/callbacks",
         json={"status": "completed", "from_agent": "x"},
     )
-    assert resp.status_code == 400
-    assert "error" in resp.json()
+    assert resp.status_code == 422
 
 
 @pytest.mark.asyncio
