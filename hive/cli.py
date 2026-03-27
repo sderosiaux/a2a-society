@@ -84,14 +84,36 @@ def join(role, name, reports_to, skills, tools, objectives, knowledge, report_fr
 
 
 @cli.command()
+@click.option("--port", default=8462, type=int, help="Agent HTTP port")
+@click.option("--auth-token", default=None, help="Bearer token for the agent")
 @click.option("--graceful/--force", default=True, help="Graceful shutdown (finish current task)")
-def leave(graceful):
-    """Leave the Hive network."""
+def leave(port, auth_token, graceful):
+    """Leave the Hive network by sending a shutdown request to the running agent."""
+    import httpx
+
+    url = f"http://localhost:{port}/admin/shutdown"
+    headers = {}
+    if auth_token:
+        headers["Authorization"] = f"Bearer {auth_token}"
+
     if graceful:
-        click.echo("Gracefully leaving the Hive network...")
+        click.echo(f"Gracefully leaving the Hive network (port {port})...")
     else:
-        click.echo("Force leaving the Hive network...")
-    click.echo("Left the network.")
+        click.echo(f"Force leaving the Hive network (port {port})...")
+
+    try:
+        resp = httpx.post(url, headers=headers, timeout=10.0)
+        if resp.status_code == 200:
+            click.echo("Shutdown request accepted. Agent is leaving.")
+        else:
+            click.echo(f"Shutdown request failed: HTTP {resp.status_code}", err=True)
+            raise SystemExit(1)
+    except httpx.ConnectError:
+        click.echo(f"Cannot connect to agent on port {port}. Is it running?", err=True)
+        raise SystemExit(1) from None
+    except Exception as e:
+        click.echo(f"Failed to send shutdown request: {e}", err=True)
+        raise SystemExit(1) from None
 
 
 @cli.command(name="registry")
@@ -120,7 +142,7 @@ def status(registry):
         agents = resp.json()
     except Exception as e:
         click.echo(f"Failed to reach registry: {e}", err=True)
-        raise SystemExit(1)
+        raise SystemExit(1) from None
 
     if not agents:
         click.echo("No agents registered.")

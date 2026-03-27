@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_asyncio
@@ -8,25 +8,7 @@ from httpx import ASGITransport, AsyncClient
 
 from hive.registry.server import create_registry_app
 from hive.registry.store import RegistryStore
-
-
-def _make_card(
-    name: str,
-    role: str = "Engineer",
-    skills: list[dict] | None = None,
-    url: str = "http://localhost:8462",
-) -> dict:
-    return {
-        "name": name,
-        "description": f"{name} agent",
-        "url": url,
-        "skills": skills or [],
-        "hive": {
-            "role": role,
-            "status": "active",
-        },
-    }
-
+from tests.conftest import make_card
 
 # -- HTTP integration tests --------------------------------------------------
 
@@ -45,7 +27,7 @@ async def client(app):
 
 @pytest.mark.asyncio
 async def test_register_and_list(client: AsyncClient):
-    card = _make_card("agent-a")
+    card = make_card("agent-a")
     resp = await client.post("/agents/register", json=card)
     assert resp.status_code == 200
 
@@ -58,8 +40,8 @@ async def test_register_and_list(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_by_skill_filters(client: AsyncClient):
-    card_a = _make_card("agent-a", skills=[{"id": "seo", "name": "SEO"}])
-    card_b = _make_card("agent-b", skills=[{"id": "dev", "name": "Dev"}])
+    card_a = make_card("agent-a", skills=[{"id": "seo", "name": "SEO"}])
+    card_b = make_card("agent-b", skills=[{"id": "dev", "name": "Dev"}])
     await client.post("/agents/register", json=card_a)
     await client.post("/agents/register", json=card_b)
 
@@ -71,7 +53,7 @@ async def test_by_skill_filters(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_get_by_name_and_404(client: AsyncClient):
-    card = _make_card("agent-a")
+    card = make_card("agent-a")
     await client.post("/agents/register", json=card)
 
     resp = await client.get("/agents/agent-a")
@@ -84,8 +66,8 @@ async def test_get_by_name_and_404(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_by_role_case_insensitive(client: AsyncClient):
-    card_a = _make_card("agent-a", role="SEO Specialist")
-    card_b = _make_card("agent-b", role="Engineer")
+    card_a = make_card("agent-a", role="SEO Specialist")
+    card_b = make_card("agent-b", role="Engineer")
     await client.post("/agents/register", json=card_a)
     await client.post("/agents/register", json=card_b)
 
@@ -100,13 +82,13 @@ async def test_by_role_case_insensitive(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_heartbeat_expires_agent(app, client: AsyncClient):
-    card = _make_card("agent-a")
+    card = make_card("agent-a")
     await client.post("/agents/register", json=card)
 
     store: RegistryStore = app.state.store
     # Manually expire the agent by backdating last_seen.
     entry = store._agents["agent-a"]
-    entry.last_seen = datetime.now(timezone.utc) - timedelta(seconds=300)
+    entry.last_seen = datetime.now(UTC) - timedelta(seconds=300)
 
     marked = store.check_heartbeats()
     assert "agent-a" in marked
@@ -117,12 +99,12 @@ async def test_heartbeat_expires_agent(app, client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_re_register_refreshes(app, client: AsyncClient):
-    card = _make_card("agent-a")
+    card = make_card("agent-a")
     await client.post("/agents/register", json=card)
 
     store: RegistryStore = app.state.store
     entry = store._agents["agent-a"]
-    entry.last_seen = datetime.now(timezone.utc) - timedelta(seconds=300)
+    entry.last_seen = datetime.now(UTC) - timedelta(seconds=300)
 
     # Re-register (heartbeat) should refresh last_seen and set active.
     await client.post("/agents/register", json=card)
@@ -134,7 +116,7 @@ async def test_re_register_refreshes(app, client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_deregister(app, client: AsyncClient):
-    card = _make_card("agent-a")
+    card = make_card("agent-a")
     await client.post("/agents/register", json=card)
 
     store: RegistryStore = app.state.store
@@ -165,7 +147,7 @@ async def auth_client(auth_app):
 @pytest.mark.asyncio
 async def test_registry_auth_register_rejected(auth_client: AsyncClient):
     """POST /agents/register without token returns 401."""
-    card = _make_card("agent-a")
+    card = make_card("agent-a")
     resp = await auth_client.post("/agents/register", json=card)
     assert resp.status_code == 401
 
@@ -173,7 +155,7 @@ async def test_registry_auth_register_rejected(auth_client: AsyncClient):
 @pytest.mark.asyncio
 async def test_registry_auth_register_wrong_token(auth_client: AsyncClient):
     """POST /agents/register with wrong token returns 403."""
-    card = _make_card("agent-a")
+    card = make_card("agent-a")
     resp = await auth_client.post(
         "/agents/register", json=card, headers={"Authorization": "Bearer wrong"}
     )
@@ -183,7 +165,7 @@ async def test_registry_auth_register_wrong_token(auth_client: AsyncClient):
 @pytest.mark.asyncio
 async def test_registry_auth_register_accepted(auth_client: AsyncClient):
     """POST /agents/register with correct token returns 200."""
-    card = _make_card("agent-a")
+    card = make_card("agent-a")
     resp = await auth_client.post(
         "/agents/register",
         json=card,

@@ -7,22 +7,9 @@ import pytest
 import respx
 
 from hive.discovery import DiscoveryClient
+from tests.conftest import make_card
 
 REGISTRY = "http://registry:9999"
-
-
-def _make_card(
-    name: str,
-    role: str = "Engineer",
-    skills: list[dict] | None = None,
-) -> dict:
-    return {
-        "name": name,
-        "description": f"{name} agent",
-        "url": f"http://{name}:8462",
-        "skills": skills or [],
-        "hive": {"role": role, "status": "active"},
-    }
 
 
 # -- 1. register with mock registry succeeds ---------------------------------
@@ -30,7 +17,7 @@ def _make_card(
 
 @pytest.mark.asyncio
 async def test_register_posts_full_card():
-    card = _make_card("alpha", skills=[{"id": "seo", "name": "SEO"}])
+    card = make_card("alpha", skills=[{"id": "seo", "name": "SEO"}])
     with respx.mock:
         route = respx.post(f"{REGISTRY}/agents/register").mock(
             return_value=httpx.Response(200, json={"status": "ok"})
@@ -54,7 +41,7 @@ async def test_register_posts_full_card():
 
 @pytest.mark.asyncio
 async def test_discover_by_skill():
-    card_a = _make_card("alpha", skills=[{"id": "seo", "name": "SEO"}])
+    card_a = make_card("alpha", skills=[{"id": "seo", "name": "SEO"}])
     with respx.mock:
         respx.get(f"{REGISTRY}/agents/by-skill/seo").mock(
             return_value=httpx.Response(200, json=[card_a])
@@ -73,7 +60,7 @@ async def test_discover_by_skill():
 
 @pytest.mark.asyncio
 async def test_discover_all_updates_cache():
-    cards = [_make_card("alpha"), _make_card("beta")]
+    cards = [make_card("alpha"), make_card("beta")]
     with respx.mock:
         respx.get(f"{REGISTRY}/agents").mock(
             return_value=httpx.Response(200, json=cards)
@@ -95,7 +82,7 @@ async def test_discover_all_updates_cache():
 
 @pytest.mark.asyncio
 async def test_discover_all_fallback_to_cache():
-    cards = [_make_card("alpha")]
+    cards = [make_card("alpha")]
     with respx.mock:
         # First call succeeds and populates cache.
         respx.get(f"{REGISTRY}/agents").mock(
@@ -120,7 +107,7 @@ async def test_discover_all_fallback_to_cache():
 
 @pytest.mark.asyncio
 async def test_fetch_peer_cards():
-    peer_card = _make_card("peer-a")
+    peer_card = make_card("peer-a")
     with respx.mock:
         respx.get("http://peer-a:8462/.well-known/agent.json").mock(
             return_value=httpx.Response(200, json=peer_card)
@@ -141,7 +128,7 @@ async def test_fetch_peer_cards():
 
 @pytest.mark.asyncio
 async def test_heartbeat_fires_multiple_times():
-    card = _make_card("alpha")
+    card = make_card("alpha")
     with respx.mock:
         route = respx.post(f"{REGISTRY}/agents/register").mock(
             return_value=httpx.Response(200, json={"status": "ok"})
@@ -162,7 +149,7 @@ async def test_heartbeat_fires_multiple_times():
 
 @pytest.mark.asyncio
 async def test_no_registry_returns_false():
-    card = _make_card("alpha")
+    card = make_card("alpha")
     client = DiscoveryClient()  # no registry_url
     try:
         result = await client.register(card)

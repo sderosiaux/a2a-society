@@ -4,7 +4,9 @@ from hive.models import AgentConfig
 
 
 def build_system_prompt(
-    config: AgentConfig, known_peers: list[str] | None = None
+    config: AgentConfig,
+    known_peers: list[str] | None = None,
+    knowledge_content: str | None = None,
 ) -> str:
     """Build a role-based system prompt from agent configuration."""
     lines: list[str] = []
@@ -59,5 +61,10 @@ def build_system_prompt(
             f"Tools you do NOT have (delegate to specialists):"
             f" {', '.join(config.tools_exclusive)}"
         )
+
+    if knowledge_content:
+        lines.append("")
+        lines.append("## Domain Knowledge")
+        lines.append(knowledge_content)
 
     return "\n".join(lines)

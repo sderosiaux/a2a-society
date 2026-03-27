@@ -67,16 +67,45 @@ def test_join_from_config_file(runner: CliRunner, tmp_path: Path):
 
 
 def test_leave_graceful(runner: CliRunner):
-    result = runner.invoke(cli, ["leave", "--graceful"])
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    with patch("httpx.post", return_value=mock_response):
+        result = runner.invoke(cli, ["leave", "--graceful", "--port", "9999"])
     assert result.exit_code == 0
     assert "Gracefully leaving" in result.output
-    assert "Left the network." in result.output
+    assert "Shutdown request accepted" in result.output
 
 
 def test_leave_force(runner: CliRunner):
-    result = runner.invoke(cli, ["leave", "--force"])
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    with patch("httpx.post", return_value=mock_response):
+        result = runner.invoke(cli, ["leave", "--force", "--port", "9999"])
     assert result.exit_code == 0
     assert "Force leaving" in result.output
+
+
+def test_leave_unreachable_agent(runner: CliRunner):
+    """Leave when agent is not running should exit with error."""
+    import httpx
+
+    with patch("httpx.post", side_effect=httpx.ConnectError("refused")):
+        result = runner.invoke(cli, ["leave", "--port", "9999"])
+    assert result.exit_code == 1
+    assert "Cannot connect" in result.output
+
+
+def test_leave_with_auth_token(runner: CliRunner):
+    """Leave passes auth token in header."""
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    with patch("httpx.post", return_value=mock_response) as mock_post:
+        result = runner.invoke(
+            cli, ["leave", "--port", "9999", "--auth-token", "secret"]
+        )
+    assert result.exit_code == 0
+    call_kwargs = mock_post.call_args
+    assert call_kwargs[1]["headers"]["Authorization"] == "Bearer secret"
 
 
 def test_status_prints_agent_table(runner: CliRunner):

@@ -1,18 +1,18 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from hive.models import AgentConfig, ReportingConfig
+from hive.models import ReportingConfig
 from hive.reporting import ReportGenerator
-
+from tests.conftest import FakeA2AClient, FakeDiscovery, FakeOrgMemory, make_config
 
 # -- helpers ---------------------------------------------------------------
 
 
-def _make_config(**overrides) -> AgentConfig:
+def _report_config(**overrides):
     defaults = {
         "name": "eng-lead",
         "role": "Engineering Lead",
@@ -20,7 +20,7 @@ def _make_config(**overrides) -> AgentConfig:
         "initiative_interval_minutes": 1,
     }
     defaults.update(overrides)
-    return AgentConfig(**defaults)
+    return make_config(**defaults)
 
 
 def _mock_claude(text: str = "# Status Report\nAll good."):
@@ -30,64 +30,12 @@ def _mock_claude(text: str = "# Status Report\nAll good."):
     return _fn
 
 
-class FakeOrgMemory:
-    """Minimal stub for OrgMemory."""
-
-    def __init__(self, events: list[dict] | None = None):
-        self._events = events or []
-        self.written: list[dict] = []
-
-    def pull(self) -> None:
-        pass
-
-    def list_events(self, agent: str | None = None) -> list[dict]:
-        if agent:
-            return [e for e in self._events if e.get("agent") == agent]
-        return list(self._events)
-
-    def write_artifact(self, domain: str, filename: str, content: str) -> dict:
-        ref = {
-            "repo": "/tmp/org",
-            "path": f"artifacts/{domain}/{filename}",
-            "commit": "abc123",
-            "size_lines": content.count("\n") + 1,
-        }
-        self.written.append({"domain": domain, "filename": filename, "content": content, "ref": ref})
-        return ref
-
-
-class FakeDiscovery:
-    def __init__(self, by_role: list[dict] | None = None, all_agents: list[dict] | None = None):
-        self._by_role = by_role or []
-        self._all = all_agents or []
-
-    async def discover_by_role(self, role: str) -> list[dict]:
-        return self._by_role
-
-    async def discover_all(self) -> list[dict]:
-        return self._all
-
-
-class FakeA2AClient:
-    def __init__(self):
-        self.sent: list[dict] = []
-
-    async def send_task(self, peer_url: str, message_text: str, from_agent: str, **kwargs):
-        self.sent.append({
-            "peer_url": peer_url,
-            "message_text": message_text,
-            "from_agent": from_agent,
-            **kwargs,
-        })
-        return {"task_id": "report-001", "status": "submitted"}
-
-
 # -- tests -----------------------------------------------------------------
 
 
 def test_should_report_false_no_reporting_config(tmp_path):
     """No reporting config -> should_report returns False."""
-    config = _make_config(reporting=None)
+    config = _report_config(reporting=None)
     rg = ReportGenerator(
         config=config,
         claude_fn=_mock_claude(),
@@ -98,7 +46,7 @@ def test_should_report_false_no_reporting_config(tmp_path):
 
 def test_should_report_true_first_call(tmp_path):
     """First call with reporting config -> True (no prior report)."""
-    config = _make_config(reporting=ReportingConfig(to="cto", frequency="daily"))
+    config = _report_config(reporting=ReportingConfig(to="cto", frequency="daily"))
     rg = ReportGenerator(
         config=config,
         claude_fn=_mock_claude(),
@@ -110,10 +58,10 @@ def test_should_report_true_first_call(tmp_path):
 def test_should_report_false_interval_not_elapsed(tmp_path):
     """Interval not elapsed -> False."""
     state_file = tmp_path / "state.json"
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     state_file.write_text(json.dumps({"last_report": now.isoformat()}))
 
-    config = _make_config(reporting=ReportingConfig(to="cto", frequency="daily"))
+    config = _report_config(reporting=ReportingConfig(to="cto", frequency="daily"))
     rg = ReportGenerator(
         config=config,
         claude_fn=_mock_claude(),
@@ -125,10 +73,10 @@ def test_should_report_false_interval_not_elapsed(tmp_path):
 def test_should_report_true_interval_elapsed(tmp_path):
     """Interval elapsed -> True."""
     state_file = tmp_path / "state.json"
-    old = datetime.now(timezone.utc) - timedelta(hours=25)
+    old = datetime.now(UTC) - timedelta(hours=25)
     state_file.write_text(json.dumps({"last_report": old.isoformat()}))
 
-    config = _make_config(reporting=ReportingConfig(to="cto", frequency="daily"))
+    config = _report_config(reporting=ReportingConfig(to="cto", frequency="daily"))
     rg = ReportGenerator(
         config=config,
         claude_fn=_mock_claude(),
@@ -143,7 +91,7 @@ async def test_generate_and_send_commits_to_org_memory(tmp_path):
     org = FakeOrgMemory(events=[
         {"agent": "eng-lead", "timestamp": "2026-03-27T10:00:00", "event": "task_done", "summary": "Shipped v2 API"},
     ])
-    config = _make_config(reporting=ReportingConfig(to="cto", frequency="daily"))
+    config = _report_config(reporting=ReportingConfig(to="cto", frequency="daily"))
 
     rg = ReportGenerator(
         config=config,
@@ -165,7 +113,7 @@ async def test_generate_and_send_sends_a2a_to_superior(tmp_path):
     """Report is sent via A2A to the superior."""
     client = FakeA2AClient()
     discovery = FakeDiscovery(by_role=[{"name": "cto-agent", "url": "http://cto:8462"}])
-    config = _make_config(reporting=ReportingConfig(to="cto", frequency="daily"))
+    config = _report_config(reporting=ReportingConfig(to="cto", frequency="daily"))
 
     rg = ReportGenerator(
         config=config,
@@ -186,7 +134,7 @@ async def test_generate_and_send_sends_a2a_to_superior(tmp_path):
 async def test_last_report_persisted_and_loaded(tmp_path):
     """Timestamp persists across instances."""
     state_file = str(tmp_path / "state.json")
-    config = _make_config(reporting=ReportingConfig(to="cto", frequency="daily"))
+    config = _report_config(reporting=ReportingConfig(to="cto", frequency="daily"))
 
     rg1 = ReportGenerator(
         config=config,
@@ -213,7 +161,7 @@ async def test_generate_and_send_no_org_memory_still_sends(tmp_path):
     """No org_memory -> skip commit, still send A2A."""
     client = FakeA2AClient()
     discovery = FakeDiscovery(by_role=[{"name": "cto-agent", "url": "http://cto:8462"}])
-    config = _make_config(reporting=ReportingConfig(to="cto", frequency="daily"))
+    config = _report_config(reporting=ReportingConfig(to="cto", frequency="daily"))
 
     rg = ReportGenerator(
         config=config,

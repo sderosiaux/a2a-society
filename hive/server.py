@@ -1,19 +1,22 @@
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any, Literal
 
 import uvicorn
-from fastapi import Depends, FastAPI, Request
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
-
 from a2a.server.apps.jsonrpc.fastapi_app import A2AFastAPIApplication
 from a2a.server.events import InMemoryQueueManager
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore
 from a2a.types import AgentCapabilities, AgentCard, AgentSkill
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 from hive.auth import require_auth
 from hive.budget import BudgetManager
@@ -22,7 +25,7 @@ from hive.discovery import DiscoveryClient
 from hive.executor import ClaudeExecutor, TaskWorker, create_executor
 from hive.initiative import InitiativeLoop
 from hive.models import AgentConfig
-from hive.queue import TaskPriority, TaskQueue
+from hive.queue import TaskQueue
 from hive.subtask_tracker import SubtaskTracker
 
 logger = logging.getLogger(__name__)
@@ -33,6 +36,86 @@ class CallbackRequest(BaseModel):
     status: Literal["completed", "failed", "rejected"] = "completed"
     result: dict | None = None
     from_agent: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _load_knowledge_files(knowledge_dir: str) -> str | None:
+    """Read all .md files from a knowledge directory and concatenate contents."""
+    p = Path(knowledge_dir)
+    if not p.is_dir():
+        logger.warning("Knowledge dir not found: %s", knowledge_dir)
+        return None
+    parts: list[str] = []
+    for md_file in sorted(p.glob("*.md")):
+        try:
+            parts.append(md_file.read_text())
+        except Exception:
+            logger.warning("Failed to read knowledge file: %s", md_file)
+    return "\n\n".join(parts) if parts else None
+
+
+async def _send_intro_message(
+    config: AgentConfig,
+    discovery: DiscoveryClient,
+    a2a_client: A2AClient,
+) -> None:
+    """Send an introduction message to the superior agent after joining."""
+    agents = await discovery.discover_all()
+    superior = None
+    for agent in agents:
+        if agent.get("name") == config.reports_to:
+            superior = agent
+            break
+    if not superior:
+        logger.warning(
+            "Superior '%s' not found in registry; skipping intro message",
+            config.reports_to,
+        )
+        return
+    skills_str = ", ".join(s.id for s in config.skills)
+    objectives_str = ", ".join(config.objectives) if config.objectives else "none"
+    intro = (
+        f"I just joined as {config.role}. "
+        f"My skills: [{skills_str}]. "
+        f"My objectives: [{objectives_str}]. "
+        f"How can I help?"
+    )
+    try:
+        await a2a_client.send_task(
+            peer_url=superior["url"],
+            message_text=intro,
+            from_agent=config.name,
+        )
+        logger.info("Sent intro message to %s", config.reports_to)
+    except Exception as exc:
+        logger.warning("Failed to send intro to %s: %s", config.reports_to, exc)
+
+
+async def _budget_reset_loop(budget_mgr: BudgetManager) -> None:
+    """Background task that resets daily/weekly budgets at midnight UTC."""
+    while True:
+        now = datetime.now(UTC)
+        tomorrow = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+        seconds_until_midnight = (tomorrow - now).total_seconds()
+        await asyncio.sleep(seconds_until_midnight)
+
+        budget_mgr.reset_daily()
+        logger.info("Budget daily reset completed")
+
+        # Monday = weekday 0
+        now_after = datetime.now(UTC)
+        if now_after.weekday() == 0:
+            budget_mgr.reset_weekly()
+            logger.info("Budget weekly reset completed (Monday)")
+
+
+# ---------------------------------------------------------------------------
+# Card builders
+# ---------------------------------------------------------------------------
 
 
 def _build_agent_card(config: AgentConfig) -> AgentCard:
@@ -92,11 +175,21 @@ _PUBLIC_PATHS = {
 }
 
 
+# ---------------------------------------------------------------------------
+# App factory
+# ---------------------------------------------------------------------------
+
+
 def create_app(config: AgentConfig, *, use_echo: bool = False) -> FastAPI:
     """Build and return the FastAPI A2A application for the given agent config."""
     agent_card = _build_agent_card(config)
     reg_card = _build_registration_card(config)
     budget_mgr = BudgetManager(config.budget)
+
+    # I7: Load knowledge files at startup
+    knowledge_content: str | None = None
+    if config.knowledge_dir:
+        knowledge_content = _load_knowledge_files(config.knowledge_dir)
 
     # Build task queue and components
     task_queue = TaskQueue(max_backlog=10, agent_superior=config.reports_to)
@@ -118,6 +211,7 @@ def create_app(config: AgentConfig, *, use_echo: bool = False) -> FastAPI:
         discovery=discovery,
         subtask_tracker=subtask_tracker,
         a2a_client=a2a_client,
+        knowledge_content=knowledge_content,
     )
 
     task_store = InMemoryTaskStore()
@@ -128,24 +222,43 @@ def create_app(config: AgentConfig, *, use_echo: bool = False) -> FastAPI:
         queue_manager=queue_manager,
     )
 
-    auth_dep = require_auth(config.auth_token)
+    require_auth(config.auth_token)
 
     worker: TaskWorker | None = None
+    reset_task: asyncio.Task | None = None
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        nonlocal worker
+        nonlocal worker, reset_task
 
         # Startup: register + discover peers
         if config.registry_url:
             await discovery.register(reg_card)
-            await discovery.start_heartbeat(reg_card)
+
+            # I2: heartbeat with fresh budget data
+            def _heartbeat_card_builder() -> dict[str, Any]:
+                fresh = _build_registration_card(config)
+                fresh["hive"]["budget"] = budget_mgr.to_heartbeat_data()
+                fresh["hive"]["status"] = budget_mgr.status.value
+                return fresh
+
+            await discovery.start_heartbeat(
+                reg_card, card_builder=_heartbeat_card_builder
+            )
             await discovery.discover_all()
+
         if config.peers:
             await discovery.fetch_peer_cards()
         app.state.discovery = discovery  # type: ignore[attr-defined]
         app.state.subtask_tracker = subtask_tracker  # type: ignore[attr-defined]
         app.state.task_queue = task_queue  # type: ignore[attr-defined]
+
+        # I1: Send intro message to superior
+        if config.reports_to and config.registry_url:
+            try:
+                await _send_intro_message(config, discovery, a2a_client)
+            except Exception as exc:
+                logger.warning("Intro message failed: %s", exc)
 
         # Start TaskWorker for queue-based execution (production only)
         if not use_echo and isinstance(executor, ClaudeExecutor):
@@ -169,8 +282,15 @@ def create_app(config: AgentConfig, *, use_echo: bool = False) -> FastAPI:
             await initiative.start()
             app.state.initiative = initiative  # type: ignore[attr-defined]
 
+        # I5: Start budget reset scheduler
+        reset_task = asyncio.create_task(_budget_reset_loop(budget_mgr))
+
         yield
         # Shutdown
+        if reset_task:
+            reset_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await reset_task
         if worker:
             await worker.stop()
         if initiative:
@@ -214,6 +334,33 @@ def create_app(config: AgentConfig, *, use_echo: bool = False) -> FastAPI:
                 "queue_depth": task_queue.size(),
             }
         )
+
+    # I3: Admin shutdown endpoint
+    @app.post("/admin/shutdown")
+    async def admin_shutdown() -> JSONResponse:
+        """Gracefully shut down the agent: deregister, notify superior, stop."""
+        # Send goodbye to superior
+        if config.reports_to and config.registry_url:
+            try:
+                agents = await discovery.discover_all()
+                superior = next(
+                    (a for a in agents if a.get("name") == config.reports_to),
+                    None,
+                )
+                if superior:
+                    await a2a_client.send_task(
+                        peer_url=superior["url"],
+                        message_text=f"{config.name} is leaving the network. Goodbye.",
+                        from_agent=config.name,
+                    )
+            except Exception as exc:
+                logger.warning("Failed to send goodbye: %s", exc)
+
+        # Deregister from registry
+        if config.registry_url:
+            await discovery.deregister(config.name)
+
+        return JSONResponse({"ok": True, "message": "Shutting down"})
 
     @app.post("/callbacks")
     async def handle_callback(request: Request, body: CallbackRequest) -> JSONResponse:

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
+from collections.abc import Callable
 from typing import Any
 
 import httpx
@@ -39,7 +41,7 @@ class DiscoveryClient:
             )
             resp.raise_for_status()
             return True
-        except (httpx.HTTPError, Exception) as exc:
+        except Exception as exc:
             logger.warning("Registry register failed: %s", exc)
             return False
 
@@ -56,7 +58,7 @@ class DiscoveryClient:
             agents: list[dict[str, Any]] = resp.json()
             self._cache = {a["name"]: a for a in agents}
             return agents
-        except (httpx.HTTPError, Exception) as exc:
+        except Exception as exc:
             logger.warning("Registry discover_all failed, using cache: %s", exc)
             return list(self._cache.values())
 
@@ -70,7 +72,7 @@ class DiscoveryClient:
             )
             resp.raise_for_status()
             return resp.json()
-        except (httpx.HTTPError, Exception) as exc:
+        except Exception as exc:
             logger.warning("Registry discover_by_skill failed: %s", exc)
             return []
 
@@ -84,37 +86,46 @@ class DiscoveryClient:
             )
             resp.raise_for_status()
             return resp.json()
-        except (httpx.HTTPError, Exception) as exc:
+        except Exception as exc:
             logger.warning("Registry discover_by_role failed: %s", exc)
             return []
 
     # -- heartbeat ------------------------------------------------------------
 
     async def start_heartbeat(
-        self, agent_card: dict[str, Any], interval: int = 60
+        self,
+        agent_card: dict[str, Any],
+        interval: int = 60,
+        card_builder: Callable[[], dict[str, Any]] | None = None,
     ) -> None:
-        """Start background task that POSTs register every *interval* seconds."""
+        """Start background task that POSTs register every *interval* seconds.
+
+        If *card_builder* is provided, it is called on each tick to rebuild
+        the card with fresh data (e.g. updated budget info).
+        """
         if self._heartbeat_task is not None:
             return
         self._heartbeat_task = asyncio.create_task(
-            self._heartbeat_loop(agent_card, interval)
+            self._heartbeat_loop(agent_card, interval, card_builder)
         )
 
     async def _heartbeat_loop(
-        self, agent_card: dict[str, Any], interval: int
+        self,
+        agent_card: dict[str, Any],
+        interval: int,
+        card_builder: Callable[[], dict[str, Any]] | None = None,
     ) -> None:
         while True:
-            await self.register(agent_card)
+            card = card_builder() if card_builder else agent_card
+            await self.register(card)
             await asyncio.sleep(interval)
 
     async def stop_heartbeat(self) -> None:
         """Cancel the heartbeat background task."""
         if self._heartbeat_task is not None:
             self._heartbeat_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._heartbeat_task
-            except asyncio.CancelledError:
-                pass
             self._heartbeat_task = None
 
     # -- deregister -----------------------------------------------------------
@@ -146,7 +157,7 @@ class DiscoveryClient:
                 card = resp.json()
                 cards.append(card)
                 self._cache[card.get("name", url)] = card
-            except (httpx.HTTPError, Exception) as exc:
+            except Exception as exc:
                 logger.warning("Failed to fetch peer card from %s: %s", url, exc)
         return cards
 

@@ -7,18 +7,8 @@ import pytest
 
 from hive.budget import BudgetManager
 from hive.initiative import InitiativeLoop
-from hive.models import AgentConfig, BudgetConfig
-
-
-def _make_config(**overrides) -> AgentConfig:
-    defaults = {
-        "name": "test-agent",
-        "role": "tester",
-        "objectives": ["Ship features", "Improve SEO"],
-        "initiative_interval_minutes": 1,
-    }
-    defaults.update(overrides)
-    return AgentConfig(**defaults)
+from hive.models import BudgetConfig
+from tests.conftest import FakeA2AClient, FakeDiscovery, FakeQueue, make_config
 
 
 def _make_budget(daily: float = 10.0, weekly: float = 50.0) -> BudgetManager:
@@ -34,35 +24,14 @@ def _mock_claude(response_json: str):
     return _fn
 
 
-class FakeQueue:
-    """Minimal mock for TaskQueue."""
-
-    def __init__(self):
-        self.tasks: list[dict] = []
-
-    async def enqueue(self, task_id: str, message_text: str, metadata: dict, context_id: str = ""):
-        self.tasks.append({"task_id": task_id, "message_text": message_text, "metadata": metadata})
-
-
-class FakeDiscovery:
-    """Minimal mock for DiscoveryClient."""
-
-    def __init__(self, peers: list[dict] | None = None):
-        self._peers = peers or []
-
-    async def discover_by_skill(self, skill_id: str) -> list[dict]:
-        return self._peers
-
-
-class FakeA2AClient:
-    """Minimal mock for A2AClient."""
-
-    def __init__(self):
-        self.sent: list[dict] = []
-
-    async def send_task(self, peer_url: str, message_text: str, from_agent: str, **kwargs):
-        self.sent.append({"peer_url": peer_url, "message_text": message_text, "from_agent": from_agent})
-        return {"task_id": "delegated-001", "status": "submitted"}
+def _initiative_config(**overrides):
+    defaults = {
+        "role": "tester",
+        "objectives": ["Ship features", "Improve SEO"],
+        "initiative_interval_minutes": 1,
+    }
+    defaults.update(overrides)
+    return make_config(**defaults)
 
 
 # ---------------------------------------------------------------------------
@@ -77,7 +46,7 @@ async def test_tick_skipped_when_budget_warning():
     assert budget.status.value == "warning"
 
     loop = InitiativeLoop(
-        config=_make_config(),
+        config=_initiative_config(),
         claude_fn=_mock_claude('{"decision": "nothing"}'),
         budget=budget,
     )
@@ -92,7 +61,7 @@ async def test_tick_skipped_when_budget_vacation():
     assert budget.status.value == "vacation"
 
     loop = InitiativeLoop(
-        config=_make_config(),
+        config=_initiative_config(),
         claude_fn=_mock_claude('{"decision": "nothing"}'),
         budget=budget,
     )
@@ -103,7 +72,7 @@ async def test_tick_skipped_when_budget_vacation():
 @pytest.mark.asyncio
 async def test_tick_nothing_decision():
     loop = InitiativeLoop(
-        config=_make_config(),
+        config=_initiative_config(),
         claude_fn=_mock_claude('{"decision": "nothing"}'),
     )
     result = await loop.tick()
@@ -116,7 +85,7 @@ async def test_tick_self_task_enqueues():
     response = json.dumps({"decision": "self_task", "description": "Write a blog post about SEO"})
 
     loop = InitiativeLoop(
-        config=_make_config(),
+        config=_initiative_config(),
         claude_fn=_mock_claude(response),
         queue=queue,
     )
@@ -133,7 +102,7 @@ async def test_tick_delegate_sends_to_peer():
     response = json.dumps({"decision": "delegate", "skill_needed": "seo", "message": "Audit the homepage"})
 
     loop = InitiativeLoop(
-        config=_make_config(),
+        config=_initiative_config(),
         claude_fn=_mock_claude(response),
         client=client,
         discovery=discovery,
@@ -148,7 +117,7 @@ async def test_tick_delegate_sends_to_peer():
 @pytest.mark.asyncio
 async def test_tick_invalid_json_returns_none():
     loop = InitiativeLoop(
-        config=_make_config(),
+        config=_initiative_config(),
         claude_fn=_mock_claude("Sure! I think we should do nothing."),
     )
     result = await loop.tick()
@@ -160,7 +129,7 @@ async def test_tick_extracts_json_from_text():
     """Claude sometimes wraps JSON in prose — verify extraction works."""
     raw = 'Here is my decision:\n{"decision": "nothing"}\nHope that helps!'
     loop = InitiativeLoop(
-        config=_make_config(),
+        config=_initiative_config(),
         claude_fn=_mock_claude(raw),
     )
     result = await loop.tick()
@@ -170,7 +139,7 @@ async def test_tick_extracts_json_from_text():
 @pytest.mark.asyncio
 async def test_start_stop_lifecycle():
     loop = InitiativeLoop(
-        config=_make_config(initiative_interval_minutes=60),
+        config=_initiative_config(initiative_interval_minutes=60),
         claude_fn=_mock_claude('{"decision": "nothing"}'),
     )
     await loop.start()
@@ -187,7 +156,7 @@ async def test_tick_records_cost_on_budget():
     assert budget.spent_today == 0.0
 
     loop = InitiativeLoop(
-        config=_make_config(),
+        config=_initiative_config(),
         claude_fn=_mock_claude('{"decision": "nothing"}'),
         budget=budget,
     )
@@ -203,7 +172,7 @@ async def test_tick_claude_error_returns_none():
         raise RuntimeError("API down")
 
     loop = InitiativeLoop(
-        config=_make_config(),
+        config=_initiative_config(),
         claude_fn=_failing_claude,
     )
     result = await loop.tick()

@@ -1,19 +1,17 @@
 from __future__ import annotations
 
-import json
 import os
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import respx
-import yaml
 from httpx import Response
 
 from hive.client import A2AClient
-from hive.executor import ARTIFACT_LINE_THRESHOLD, ClaudeExecutor
-from hive.models import AgentConfig, BudgetConfig
+from hive.executor import ClaudeExecutor
+from hive.models import BudgetConfig
 from hive.org_memory import OrgMemory
-
+from tests.conftest import make_config, mock_context, mock_event_queue
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -25,12 +23,8 @@ def _make_org_memory(tmp_path, agent: str = "test-agent") -> OrgMemory:
     return mem
 
 
-def _make_config(role: str = "SEO Specialist") -> AgentConfig:
-    return AgentConfig(
-        name="seo-agent",
-        role=role,
-        budget=BudgetConfig(daily_max_usd=5.0, per_task_max_usd=2.0),
-    )
+def _seo_config(role: str = "SEO Specialist"):
+    return make_config(name="seo-agent", role=role, budget=BudgetConfig(daily_max_usd=5.0, per_task_max_usd=2.0))
 
 
 def _long_response(n: int = 60) -> str:
@@ -42,36 +36,6 @@ def _short_response() -> str:
     return "Short answer in a few lines.\nDone."
 
 
-def _mock_context(
-    task_id: str = "task-1",
-    context_id: str = "ctx-1",
-    user_input: str = "Do work",
-    metadata: dict | None = None,
-):
-    from a2a.server.agent_execution import RequestContext
-
-    context = MagicMock(spec=RequestContext)
-    context.task_id = task_id
-    context.context_id = context_id
-    context.get_user_input.return_value = user_input
-    context.current_task = None
-
-    # Mock the message property for metadata access
-    msg = MagicMock()
-    msg.metadata = metadata
-    context.message = msg
-
-    return context
-
-
-def _mock_event_queue():
-    from a2a.server.events import EventQueue
-
-    eq = MagicMock(spec=EventQueue)
-    eq.enqueue_event = AsyncMock()
-    return eq
-
-
 # ---------------------------------------------------------------------------
 # 1. Response > 50 lines -> artifact committed, response contains ref + summary
 # ---------------------------------------------------------------------------
@@ -79,19 +43,19 @@ def _mock_event_queue():
 @pytest.mark.asyncio
 async def test_large_response_committed_as_artifact(tmp_path):
     org_mem = _make_org_memory(tmp_path)
-    config = _make_config()
+    config = _seo_config()
     executor = ClaudeExecutor(config, org_memory=org_mem)
 
     long_text = _long_response(60)
-    context = _mock_context()
-    event_queue = _mock_event_queue()
+    context = mock_context()
+    event_queue = mock_event_queue()
 
     with patch("hive.claude.invoke_claude", new_callable=AsyncMock) as mock_invoke:
         mock_invoke.return_value = (long_text, 0.10, "sess-1")
         await executor.execute(context, event_queue)
 
     # Artifact file should exist in org-memory
-    artifact_path = os.path.join("artifacts", "seo", "task-1-response.md")
+    artifact_path = os.path.join("artifacts", "seo-specialist", "task-1-response.md")
     content = org_mem.read_file(artifact_path)
     assert content == long_text
 
@@ -99,8 +63,6 @@ async def test_large_response_committed_as_artifact(tmp_path):
     # Find the enqueue_event call that completed the task
     calls = event_queue.enqueue_event.call_args_list
     assert len(calls) > 0
-    # The last call should contain the summary text with artifact path
-    last_event = calls[-1]
     # Verify summary pattern: first 3 lines + "... (full report: ...)"
     # We check via the invoke_claude mock not being the raw text
     # Instead, verify the artifact file exists and has correct content
@@ -115,19 +77,19 @@ async def test_large_response_committed_as_artifact(tmp_path):
 @pytest.mark.asyncio
 async def test_short_response_returned_inline(tmp_path):
     org_mem = _make_org_memory(tmp_path)
-    config = _make_config()
+    config = _seo_config()
     executor = ClaudeExecutor(config, org_memory=org_mem)
 
     short_text = _short_response()
-    context = _mock_context()
-    event_queue = _mock_event_queue()
+    context = mock_context()
+    event_queue = mock_event_queue()
 
     with patch("hive.claude.invoke_claude", new_callable=AsyncMock) as mock_invoke:
         mock_invoke.return_value = (short_text, 0.02, "sess-2")
         await executor.execute(context, event_queue)
 
     # No artifact file should exist
-    artifact_path = os.path.join("artifacts", "seo", "task-1-response.md")
+    artifact_path = os.path.join("artifacts", "seo-specialist", "task-1-response.md")
     assert org_mem.read_file(artifact_path) is None
 
 
@@ -137,12 +99,12 @@ async def test_short_response_returned_inline(tmp_path):
 
 @pytest.mark.asyncio
 async def test_no_org_memory_always_inline():
-    config = _make_config()
+    config = _seo_config()
     executor = ClaudeExecutor(config)  # no org_memory
 
     long_text = _long_response(60)
-    context = _mock_context()
-    event_queue = _mock_event_queue()
+    context = mock_context()
+    event_queue = mock_event_queue()
 
     with patch("hive.claude.invoke_claude", new_callable=AsyncMock) as mock_invoke:
         mock_invoke.return_value = (long_text, 0.05, "sess-3")
@@ -164,14 +126,14 @@ async def test_inbound_artifact_ref_prepends_content(tmp_path):
     # Pre-write an artifact to org-memory
     ref = org_mem.write_artifact("reports", "data.md", "## Report Data\nImportant findings here.\n")
 
-    config = _make_config()
+    config = _seo_config()
     executor = ClaudeExecutor(config, org_memory=org_mem)
 
-    context = _mock_context(
+    context = mock_context(
         user_input="Summarize the report",
         metadata={"artifact_ref": ref, "from_agent": "boss"},
     )
-    event_queue = _mock_event_queue()
+    event_queue = mock_event_queue()
 
     with patch("hive.claude.invoke_claude", new_callable=AsyncMock) as mock_invoke:
         mock_invoke.return_value = ("Summary done.", 0.03, "sess-4")
@@ -191,11 +153,11 @@ async def test_inbound_artifact_ref_prepends_content(tmp_path):
 @pytest.mark.asyncio
 async def test_inbound_no_artifact_ref_normal(tmp_path):
     org_mem = _make_org_memory(tmp_path)
-    config = _make_config()
+    config = _seo_config()
     executor = ClaudeExecutor(config, org_memory=org_mem)
 
-    context = _mock_context(user_input="Just a question")
-    event_queue = _mock_event_queue()
+    context = mock_context(user_input="Just a question")
+    event_queue = mock_event_queue()
 
     with patch("hive.claude.invoke_claude", new_callable=AsyncMock) as mock_invoke:
         mock_invoke.return_value = ("Answer.", 0.01, "sess-5")
@@ -284,14 +246,14 @@ async def test_client_send_task_without_artifact_ref():
 @pytest.mark.asyncio
 async def test_events_logged_on_receive_and_complete(tmp_path):
     org_mem = _make_org_memory(tmp_path)
-    config = _make_config()
+    config = _seo_config()
     executor = ClaudeExecutor(config, org_memory=org_mem)
 
-    context = _mock_context(
+    context = mock_context(
         user_input="Analyze traffic",
         metadata={"from_agent": "vp-marketing"},
     )
-    event_queue = _mock_event_queue()
+    event_queue = mock_event_queue()
 
     with patch("hive.claude.invoke_claude", new_callable=AsyncMock) as mock_invoke:
         mock_invoke.return_value = ("Analysis complete.", 0.07, "sess-6")
@@ -320,7 +282,7 @@ async def test_events_logged_on_receive_and_complete(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_slugify_role():
-    assert ClaudeExecutor._slugify_role("SEO Specialist") == "seo"
-    assert ClaudeExecutor._slugify_role("Content Writer") == "content"
+    assert ClaudeExecutor._slugify_role("SEO Specialist") == "seo-specialist"
+    assert ClaudeExecutor._slugify_role("Content Writer") == "content-writer"
     assert ClaudeExecutor._slugify_role("engineer") == "engineer"
     assert ClaudeExecutor._slugify_role("") == "general"

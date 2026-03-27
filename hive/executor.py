@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import re
@@ -14,7 +15,7 @@ from a2a.utils import new_agent_text_message
 from hive.budget import BudgetManager
 from hive.client import A2AClient
 from hive.discovery import DiscoveryClient
-from hive.models import AgentConfig
+from hive.models import AgentConfig, BudgetStatus
 from hive.org_memory import OrgMemory
 from hive.prompt_builder import build_system_prompt
 from hive.queue import QueuedTask, TaskQueue, TaskQueueFullError
@@ -99,6 +100,7 @@ class ClaudeExecutor(AgentExecutor):
         discovery: DiscoveryClient | None = None,
         subtask_tracker: SubtaskTracker | None = None,
         a2a_client: A2AClient | None = None,
+        knowledge_content: str | None = None,
     ) -> None:
         self.config = config
         self.budget = budget_manager
@@ -107,15 +109,15 @@ class ClaudeExecutor(AgentExecutor):
         self.discovery = discovery
         self.subtask_tracker = subtask_tracker
         self.a2a_client = a2a_client
+        self.knowledge_content = knowledge_content
         # Map of task_id -> Future for queue-based execution signaling
         self._pending_futures: dict[str, asyncio.Future] = {}
 
     @staticmethod
     def _slugify_role(role: str) -> str:
-        """Convert role to a slug for artifact domain: 'SEO Specialist' -> 'seo'."""
+        """Convert role to a slug for artifact domain: 'SEO Specialist' -> 'seo-specialist'."""
         slug = re.sub(r"[^a-z0-9]+", "-", role.lower()).strip("-")
-        # Use first word only for brevity
-        return slug.split("-")[0] if slug else "general"
+        return slug or "general"
 
     def _extract_artifact_ref(self, context: RequestContext) -> dict | None:
         """Extract artifact_ref from incoming message metadata, if present."""
@@ -134,6 +136,26 @@ class ClaudeExecutor(AgentExecutor):
         except Exception:
             logger.warning("Failed to read artifact %s", artifact_ref.get("path"))
             return None
+
+    async def _notify_vacation(self) -> None:
+        """Send a vacation notification to the superior agent."""
+        if not self.config.reports_to or not self.discovery or not self.a2a_client:
+            return
+        agents = await self.discovery.discover_all()
+        superior = next(
+            (a for a in agents if a.get("name") == self.config.reports_to),
+            None,
+        )
+        if not superior:
+            logger.warning("Superior '%s' not found for vacation notice", self.config.reports_to)
+            return
+        msg = f"Budget depleted ({self.config.name}). On vacation until next reset."
+        await self.a2a_client.send_task(
+            peer_url=superior["url"],
+            message_text=msg,
+            from_agent=self.config.name,
+        )
+        logger.info("Sent vacation notification to %s", self.config.reports_to)
 
     async def execute(
         self, context: RequestContext, event_queue: EventQueue
@@ -234,7 +256,9 @@ class ClaudeExecutor(AgentExecutor):
             except Exception:
                 logger.warning("Failed to log task_received event for %s", task_id)
 
-        system_prompt = build_system_prompt(self.config)
+        system_prompt = build_system_prompt(
+            self.config, knowledge_content=self.knowledge_content
+        )
 
         response_text, cost_usd, _session_id = await invoke_claude(
             prompt=text,
@@ -242,6 +266,7 @@ class ClaudeExecutor(AgentExecutor):
             allowed_tools=self.config.tools or None,
             max_budget_usd=max_budget,
             permission_mode=self.config.permission_mode,
+            max_turns=self.config.max_turns,
         )
 
         # Record cost
@@ -252,6 +277,25 @@ class ClaudeExecutor(AgentExecutor):
                 logger.info(
                     "Budget status changed: %s -> %s", prev_status.value, new_status.value
                 )
+
+            # I4: Write budget log to org-memory
+            if self.org_memory:
+                try:
+                    self.org_memory.append_budget_log(self.budget.to_log_entry())
+                except Exception:
+                    logger.warning("Failed to write budget log for task %s", task_id)
+
+            # I6: Notify superior on vacation
+            if (
+                new_status != prev_status
+                and new_status == BudgetStatus.vacation
+                and self.discovery
+                and self.a2a_client
+            ):
+                try:
+                    await self._notify_vacation()
+                except Exception:
+                    logger.warning("Failed to send vacation notification")
 
         # --- C5: Check for delegation intent ---
         delegation = parse_delegation(response_text)
@@ -349,6 +393,7 @@ def create_executor(
     discovery: DiscoveryClient | None = None,
     subtask_tracker: SubtaskTracker | None = None,
     a2a_client: A2AClient | None = None,
+    knowledge_content: str | None = None,
 ) -> AgentExecutor:
     """Factory: returns EchoExecutor for tests, ClaudeExecutor for production."""
     if use_echo:
@@ -361,6 +406,7 @@ def create_executor(
         discovery=discovery,
         subtask_tracker=subtask_tracker,
         a2a_client=a2a_client,
+        knowledge_content=knowledge_content,
     )
 
 
@@ -414,10 +460,8 @@ class TaskWorker:
         self._running = False
         if self._task:
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._task
-            except asyncio.CancelledError:
-                pass
             self._task = None
 
 
