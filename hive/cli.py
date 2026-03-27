@@ -137,5 +137,17 @@ def status(registry):
         click.echo(f"{name:<20} {role:<20} {agent_status:<10} {budget_str:<15}")
 
 
+@cli.command()
+@click.option("--registry", required=True, help="Registry URL")
+@click.option("--org-memory", default=None, help="Path to local org-memory repo")
+@click.option("--refresh", default=5, type=int, help="Refresh interval in seconds")
+def dashboard(registry, org_memory, refresh):
+    """Live dashboard showing all agents and activity."""
+    from hive.dashboard import HiveDashboard
+
+    dash = HiveDashboard(registry, org_memory, refresh)
+    dash.run()
+
+
 if __name__ == "__main__":
     cli()

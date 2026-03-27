@@ -15,6 +15,7 @@ dependencies = [
     "click",
     "gitpython",
     "pyyaml",
+    "rich",
 ]
 
 [project.scripts]
